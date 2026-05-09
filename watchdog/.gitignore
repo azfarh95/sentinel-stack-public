@@ -1,0 +1,5 @@
+config.json
+github_sync_checkpoint.json
+__pycache__/
+*.pyc
+*.pyo

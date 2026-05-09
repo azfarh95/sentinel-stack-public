@@ -1,0 +1,6 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+python-telegram-bot==21.11.1
+yt-dlp
+gallery-dl
+aiosqlite

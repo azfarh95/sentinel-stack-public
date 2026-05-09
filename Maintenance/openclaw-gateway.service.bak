@@ -1,0 +1,32 @@
+[Unit]
+Description=OpenClaw Gateway (v2026.4.25)
+After=network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+User=azfar
+Group=azfar
+ExecStart=/usr/bin/node /home/azfar/.npm-global/lib/node_modules/openclaw/dist/index.js gateway --port 18789
+Restart=always
+RestartSec=5
+RestartPreventExitStatus=78
+TimeoutStopSec=30
+TimeoutStartSec=30
+SuccessExitStatus=0 143
+KillMode=control-group
+Environment=HOME=/home/azfar
+Environment=TMPDIR=/tmp
+Environment=USER=azfar
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PATH=/usr/bin:/home/azfar/.local/bin:/home/azfar/.npm-global/bin:/home/azfar/bin:/home/azfar/.volta/bin:/home/azfar/.asdf/shims:/home/azfar/.bun/bin:/home/azfar/.nix-profile/bin:/home/azfar/.nvm/current/bin:/home/azfar/.local/share/fnm/aliases/default/bin:/home/azfar/.local/share/fnm/current/bin:/home/azfar/.fnm/aliases/default/bin:/home/azfar/.fnm/current/bin:/home/azfar/.local/share/pnpm:/usr/local/bin:/bin
+Environment=OPENCLAW_GATEWAY_PORT=18789
+Environment=OPENCLAW_SYSTEMD_UNIT=openclaw-gateway.service
+Environment="OPENCLAW_WINDOWS_TASK_NAME=OpenClaw Gateway"
+Environment=OPENCLAW_SERVICE_MARKER=openclaw
+Environment=OPENCLAW_SERVICE_KIND=gateway
+Environment=OPENCLAW_SERVICE_VERSION=2026.4.25
+
+[Install]
+WantedBy=multi-user.target
