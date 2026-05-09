@@ -1,0 +1,8 @@
+# Force LF line endings for scripts — prevents CRLF breakage when checked out on Windows
+*.sh        text eol=lf
+*.py        text eol=lf
+*.ps1       text eol=crlf
+
+# Patch reference files — keep LF so diff comparisons work correctly in WSL
+*.original  text eol=lf
+*.patched   text eol=lf

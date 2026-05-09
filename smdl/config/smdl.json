@@ -1,0 +1,8 @@
+{
+  "owner_chat_id": YOUR_TELEGRAM_CHAT_ID,
+  "allowed_chat_ids": [],
+  "default_quality": "1080p",
+  "max_concurrent_downloads": 2,
+  "delete_after_send": false,
+  "temp_ttl_hours": 24
+}

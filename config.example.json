@@ -1,0 +1,9 @@
+{
+  "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+  "telegram_chat_ids": {
+    "dm": "YOUR_DM_CHAT_ID",
+    "group": "YOUR_GROUP_CHAT_ID"
+  },
+  "mini_app_url": "https://your-mini-app-url.example.com",
+  "mini_app_secret": "generate-with: py -3 -c \"import secrets; print(secrets.token_hex(24))\""
+}

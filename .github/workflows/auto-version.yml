@@ -1,0 +1,75 @@
+name: Auto Version Bump
+
+# Triggers on every push to master.
+# Commit prefix rules:
+#   fix:            -> patch  (e.g. 2.0.0 -> 2.0.1)
+#   feat:           -> minor  (e.g. 2.0.1 -> 2.1.0)
+#   BREAKING CHANGE -> major  (e.g. 2.1.0 -> 3.0.0)
+#   anything else   -> skip   (no bump)
+#
+# The bump commit itself ("chore: bump to vX.Y.Z") is skipped automatically.
+# If a PAT secret named "PAT" exists, it is used so the new tag also
+# triggers the docker-publish workflow. Otherwise GITHUB_TOKEN is used.
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use PAT if available so the tag push can trigger docker-publish
+          token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+
+      - name: Classify commit
+        id: classify
+        run: |
+          MSG=$(git log -1 --format=%s)
+          echo "Commit: $MSG"
+          if echo "$MSG" | grep -qE "^chore: bump to v"; then
+            echo "part=skip" >> "$GITHUB_OUTPUT"
+          elif echo "$MSG" | grep -qiE "BREAKING[[:space:]]CHANGE"; then
+            echo "part=major" >> "$GITHUB_OUTPUT"
+          elif echo "$MSG" | grep -qE "^feat(\([^)]+\))?!?:"; then
+            echo "part=minor" >> "$GITHUB_OUTPUT"
+          elif echo "$MSG" | grep -qE "^fix(\([^)]+\))?:"; then
+            echo "part=patch" >> "$GITHUB_OUTPUT"
+          else
+            echo "part=skip" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute new version
+        if: steps.classify.outputs.part != 'skip'
+        id: bump
+        run: |
+          PART="${{ steps.classify.outputs.part }}"
+          CURRENT=$(cat VERSION | tr -d '[:space:]')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          case "$PART" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH+1)) ;;
+          esac
+          NEW="$MAJOR.$MINOR.$PATCH"
+          printf '%s' "$NEW" > VERSION
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Bumping $CURRENT -> $NEW ($PART)"
+
+      - name: Commit, tag, and push
+        if: steps.classify.outputs.part != 'skip'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump to v${{ steps.bump.outputs.new }}"
+          git tag "v${{ steps.bump.outputs.new }}" -m "Release v${{ steps.bump.outputs.new }}"
+          git push origin master "v${{ steps.bump.outputs.new }}"

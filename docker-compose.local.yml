@@ -1,0 +1,264 @@
+services:
+  app:
+    container_name: metamcp
+    image: ghcr.io/metatool-ai/metamcp:latest
+    pull_policy: always
+    env_file:
+      - .env.local
+    ports:
+      - "127.0.0.1:12008:12008"
+    volumes:
+      - "${USERPROFILE}:/workspace"
+    environment:
+      # Postgres connection details
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      
+      # Database configuration (composed from above vars)
+      DATABASE_URL: postgresql://${POSTGRES_USER:-metamcp_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-metamcp_db}
+      
+      # Application URL configuration
+      APP_URL: ${APP_URL:-http://localhost:12008}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:12008}
+      
+      # Auth configuration
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      
+      # Docker networking fix
+      TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL: ${TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL:-true}
+      
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: metamcp-pg
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+    ports:
+      - "127.0.0.1:${POSTGRES_EXTERNAL_PORT:-9433}:5432"
+    volumes:
+      - metamcp_local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metamcp_user} -d ${POSTGRES_DB:-metamcp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - metamcp-network
+
+  ytdlp-mcp:
+    build:
+      context: ./ytdlp-mcp
+      dockerfile: Dockerfile
+    container_name: ytdlp-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - "G:/YT-DLP:/downloads"
+      - "G:/YT-DLP/cookies:/cookies"
+      - ytdlp_mcp_data:/data
+    env_file:
+      - .env.local
+    environment:
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      DEFAULT_QUALITY: 1080p
+      MAX_CONCURRENT_DOWNLOADS: "2"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  reminders-mcp:
+    build:
+      context: ./reminders-mcp
+      dockerfile: Dockerfile
+    container_name: reminders-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8087:8087"
+    volumes:
+      - reminders_mcp_data:/data
+    env_file:
+      - .env.local
+    environment:
+      LOCAL_TIMEZONE: "Asia/Kuala_Lumpur"
+      SCHEDULER_TIMEZONE: "Asia/Kuala_Lumpur"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  google-workspace-mcp:
+    build:
+      context: ./google-workspace-mcp
+      dockerfile: Dockerfile
+    container_name: google-workspace-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8089:8089"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\google-workspace-mcp\\data:/data"
+    environment:
+      CREDENTIALS_FILE: /data/credentials.json
+      TOKEN_FILE: /data/token.json
+      REDIRECT_URI: http://localhost:8089/oauth/callback
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  maps-mcp:
+    build:
+      context: ./maps-mcp
+      dockerfile: Dockerfile
+    container_name: maps-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    env_file:
+      - .env.local
+    environment:
+      LOCAL_TIMEZONE: "Asia/Kuala_Lumpur"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  memory-mcp:
+    build:
+      context: ./memory-mcp
+      dockerfile: Dockerfile
+    container_name: memory-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8092:8092"
+    volumes:
+      - memory_mcp_data:/data
+    networks:
+      - metamcp-network
+
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    container_name: github-mcp
+    command: ["http", "--port", "8091", "--toolsets", "all"]
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PAT}
+    ports:
+      - "127.0.0.1:8091:8091"
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  onedrive-mcp:
+    build:
+      context: ./onedrive-mcp
+      dockerfile: Dockerfile
+    container_name: onedrive-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8093:8093"
+    volumes:
+      - onedrive_mcp_data:/data
+    env_file:
+      - .env.local
+    environment:
+      DOCINTEL_ENDPOINT: https://your-resource.cognitiveservices.azure.com/
+      # DOCINTEL_KEY is injected via env_file (.env.local) — do not hardcode here
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: libretranslate
+    restart: unless-stopped
+    user: "0:0"
+    ports:
+      - "127.0.0.1:5050:5000"
+    environment:
+      LT_LOAD_ONLY: "en,zh,ru"
+      LT_DISABLE_WEB_UI: "true"
+      LT_UPDATE_MODELS: "false"
+      LT_HOST: "0.0.0.0"
+      LT_PORT: "5000"
+    volumes:
+      - libretranslate_models:/root/.local/share/argos-translate
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/languages',timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    networks:
+      - metamcp-network
+
+  translate-mcp:
+    build:
+      context: ./translate-mcp
+      dockerfile: Dockerfile
+    container_name: translate-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8094:8094"
+    environment:
+      LT_BASE_URL: "http://libretranslate:5000"
+      LT_FALLBACK_URL: "https://translate.argosopentech.com"
+    depends_on:
+      libretranslate:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8094/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+volumes:
+  metamcp_local_postgres_data:
+    driver: local
+  ytdlp_mcp_data:
+    driver: local
+  reminders_mcp_data:
+    driver: local
+  memory_mcp_data:
+    driver: local
+  onedrive_mcp_data:
+    driver: local
+  libretranslate_models:
+    driver: local
+
+networks:
+  metamcp-network:
+    driver: bridge
