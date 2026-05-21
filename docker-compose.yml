@@ -1,0 +1,800 @@
+# Sentinel Stack — consolidated Docker Compose (V6 prep)
+#
+# Consolidated from docker-compose.{local,smdl,firefly}.yml on 2026-05-10.
+# All services here. Optional services gated by profiles.
+#
+# Default profile (no flag) brings up the production "core" stack:
+#   metamcp + postgres + 9 MCP servers
+#
+# Optional profiles:
+#   media     → smdl (standalone media downloader)
+#   finance   → Firefly III financial tracking + its postgres
+#
+# Usage:
+#   docker compose --env-file .env.local up -d                       # core only
+#   docker compose --env-file .env.local --profile media up -d       # core + smdl
+#   docker compose --env-file .env.local --profile media --profile finance up -d   # everything
+#
+# Volume names below are preserved EXACTLY from the prior split-file setup
+# so existing container data continues to be mounted on first up.
+#
+# Loopback-only port bindings (127.0.0.1:) — exposed publicly only via
+# Cloudflare Tunnel for the mini-app subdomain.
+
+services:
+
+  # ── Core: MetaMCP + postgres ────────────────────────────────────────────────
+
+  app:
+    container_name: metamcp
+    # Forked from upstream metatool-ai/metamcp at v2.4.22 + cherry-picked PRs:
+    #   - PR #273: prevent subprocess leaks from concurrent session creation
+    #   - PR #283: re-init backend session when 404 Session not found
+    # Source: github.com/YOUR_GITHUB_USERNAME/metamcp branch sentinel-patches
+    # Locally-built image, pull_policy: never until pushed to GHCR.
+    # Rollback: change image back to ghcr.io/metatool-ai/metamcp:latest +
+    # set pull_policy: always.
+    image: ghcr.io/YOUR_GITHUB_USERNAME/sentinel-metamcp:sentinel-latest
+    pull_policy: always
+    env_file:
+      - .env.local
+    ports:
+      - "127.0.0.1:12008:12008"
+    volumes:
+      - "${USERPROFILE}:/workspace"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-metamcp_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-metamcp_db}
+      APP_URL: ${APP_URL:-http://localhost:12008}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:12008}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL: ${TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: metamcp-pg
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+    ports:
+      - "127.0.0.1:${POSTGRES_EXTERNAL_PORT:-9433}:5432"
+    volumes:
+      - metamcp_local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metamcp_user} -d ${POSTGRES_DB:-metamcp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - metamcp-network
+
+  # ── Core: MCP servers (always on) ───────────────────────────────────────────
+
+  ytdlp-mcp:
+    build:
+      context: ./ytdlp-mcp
+      dockerfile: Dockerfile
+    container_name: ytdlp-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}:/downloads"
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}/cookies:/cookies"
+      - ytdlp_mcp_data:/data
+    env_file:
+      - .env.local
+    environment:
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      DEFAULT_QUALITY: 1080p
+      MAX_CONCURRENT_DOWNLOADS: "2"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  portfolio-mcp:
+    # 2026-05-15 cutover: build context + finance/ mount now sourced from
+    # ../sentinel-finance (the canonical SoT). Previously ./portfolio-mcp
+    # and ./finance, both now legacy in-place copies. See LEGACY-NOTICE.md
+    # files in those directories for context.
+    build:
+      context: ../sentinel-finance
+      dockerfile: Dockerfile
+    container_name: portfolio-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+      # Tailscale access via host-level netsh portproxy (Docker Desktop on Windows
+      # ignores non-loopback/0.0.0.0 host IPs). See V4 prep docs for WSL2 migration
+      # path which would replace this with direct uvicorn bind.
+    volumes:
+      - portfolio_mcp_data:/data
+      - "../sentinel-finance/finance:/finance:rw"
+      - "./google-workspace-mcp/data:/google-workspace-mcp/data:ro"
+      # Sentinel Finance folder provisioning (creates Sentinel Finance/* subfolders).
+      # OneDrive Personal root — used by app.folder_provisioning to mkdir locally.
+      - "${USERPROFILE}\\OneDrive:/onedrive:rw"
+    env_file:
+      - .env.local
+    environment:
+      MORALIS_API_KEY: ${MORALIS_API_KEY:-}
+      PORTFOLIO_DEFAULT_ADDRESS: ${PORTFOLIO_DEFAULT_ADDRESS:-}
+      PORTFOLIO_DUST_USD: "0.01"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TESTBOT_TOKEN: ${TESTBOT_TOKEN:-}
+      OWNER_CHAT_ID: "YOUR_TELEGRAM_CHAT_ID"
+      ONCHAIN_ALERT_MIN_USD: "1.0"
+      # Moralis free plan: 40k CU/day. Polling 7 chains every 5min = ~10k CU/day baseline
+      # before any snapshot calls. Bumped to 30min on 2026-05-13 to leave headroom for
+      # page traffic + Mini App snapshots.
+      ONCHAIN_POLL_INTERVAL_MIN: "30"
+      FIREFLY_PAT: ${FIREFLY_PAT:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      WISE_API_TOKEN: ${WISE_API_TOKEN:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      SENTINEL_FINANCE_AGENT_TOKEN: ${SENTINEL_FINANCE_AGENT_TOKEN:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-your@email.com}
+      PWA_HOST_OVERRIDE: ${PWA_HOST_OVERRIDE:-https://sentinelfinance.your-domain.example.com}
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Test container for replay-sim work (#19/#20). Same image as production,
+  # but isolated volumes + read-only OneDrive + different port. Activate
+  # with `docker compose --profile test up portfolio-mcp-test`. Bootstrap +
+  # replay + compare modules are TBD per task #19; this entry just gives
+  # them a home to run in.
+  portfolio-mcp-test:
+    profiles: ["test"]
+    image: metamcp-local-portfolio-mcp:latest
+    container_name: portfolio-mcp-test
+    restart: "no"
+    ports:
+      - "127.0.0.1:8095:8086"
+    volumes:
+      - portfolio_mcp_test_data:/data
+      - "../sentinel-finance/finance:/finance:ro"
+      - "${USERPROFILE}\\OneDrive:/onedrive:ro"
+    env_file:
+      - .env.local
+    environment:
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      SENTINEL_FINANCE_TEST_MODE: "1"
+    networks:
+      - metamcp-network
+
+  # NOTE: shopping-mcp was containerized 2026-05-20 then reverted to native
+  # 2026-05-21 because the headful-in-container Chromium fingerprint failed
+  # Shopee's Akamai bot-shield while native Chrome+nodriver beat it cleanly.
+  # The native service is launched by the watchdog (see watchdog.py
+  # "Shopping MCP" entry) and reachable via host.docker.internal:8100.
+  # Dockerfile + volume kept around in case we revisit.
+
+  reminders-mcp:
+    build:
+      context: ./reminders-mcp
+      dockerfile: Dockerfile
+    container_name: reminders-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8087:8087"
+    volumes:
+      - reminders_mcp_data:/data
+    env_file:
+      - .env.local
+    environment:
+      LOCAL_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      SCHEDULER_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  google-workspace-mcp:
+    build:
+      context: ./google-workspace-mcp
+      dockerfile: Dockerfile
+    container_name: google-workspace-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8089:8089"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\google-workspace-mcp\\data:/data"
+    environment:
+      CREDENTIALS_FILE: /data/credentials.json
+      TOKEN_FILE: /data/token.json
+      REDIRECT_URI: http://localhost:8089/oauth/callback
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  maps-mcp:
+    build:
+      context: ./maps-mcp
+      dockerfile: Dockerfile
+    container_name: maps-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    env_file:
+      - .env.local
+    environment:
+      LOCAL_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  memory-mcp:
+    build:
+      context: ./memory-mcp
+      dockerfile: Dockerfile
+    container_name: memory-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8092:8092"
+    volumes:
+      - memory_mcp_data:/data
+    networks:
+      - metamcp-network
+
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    container_name: github-mcp
+    command: ["http", "--port", "8091", "--toolsets", "all"]
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PAT}
+    ports:
+      - "127.0.0.1:8091:8091"
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  onedrive-mcp:
+    build:
+      context: ./onedrive-mcp
+      dockerfile: Dockerfile
+    container_name: onedrive-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8093:8093"
+    volumes:
+      - onedrive_mcp_data:/data
+    env_file:
+      - .env.local
+    environment:
+      # Default matches owner setup; override via .env.local for fresh installs.
+      # The sanitizer (scripts/sanitize-public.sh) replaces the owner-specific
+      # subdomain with `your-resource` before public-repo sync.
+      DOCINTEL_ENDPOINT: ${DOCINTEL_ENDPOINT:-https://your-resource.cognitiveservices.azure.com/}
+      # DOCINTEL_KEY is injected via env_file (.env.local) — do not hardcode here
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: libretranslate
+    restart: unless-stopped
+    user: "0:0"
+    ports:
+      - "127.0.0.1:5050:5000"
+    environment:
+      LT_LOAD_ONLY: "en,zh,ru"
+      LT_DISABLE_WEB_UI: "true"
+      LT_UPDATE_MODELS: "false"
+      LT_HOST: "0.0.0.0"
+      LT_PORT: "5000"
+    volumes:
+      - libretranslate_models:/root/.local/share/argos-translate
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/languages',timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    networks:
+      - metamcp-network
+
+  translate-mcp:
+    build:
+      context: ./translate-mcp
+      dockerfile: Dockerfile
+    container_name: translate-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8094:8094"
+    environment:
+      LT_BASE_URL: "http://libretranslate:5000"
+      LT_FALLBACK_URL: "https://translate.argosopentech.com"
+    depends_on:
+      libretranslate:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8094/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # ── Core: Vaultwarden self-hosted password manager ──────────────────────────
+  # Long-term home for stack secrets (currently in WCM). Empty vault on first
+  # deploy — admin creates users via http://127.0.0.1:8085/admin (token below).
+  # Bound to loopback only; data persisted to ./vaultwarden-data on Windows host.
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:80"
+      # Loopback-only mapping. Tailnet access via
+      # 'tailscale serve --tcp=8085 tcp://127.0.0.1:8085'.
+      # Order matters: container must be (re)created BEFORE `tailscale serve`
+      # claims the port — otherwise Docker Desktop's vpnkit fails to bind
+      # silently (HostConfig populated, NetworkSettings.Ports empty).
+      # Recovery: `tailscale serve --tcp=8085 off`, recreate container,
+      # then `tailscale serve --bg --tcp=8085 tcp://127.0.0.1:8085`.
+    volumes:
+      - ./vaultwarden-data:/data
+    environment:
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:?VAULTWARDEN_ADMIN_TOKEN must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      SIGNUPS_ALLOWED: "false"  # first user registered 2026-05-11 — keep locked
+      INVITATIONS_ALLOWED: "false"
+      DOMAIN: "https://vault.your-domain.example.com"
+      # 2026-05-11: Vault fronted by Cloudflare Tunnel (tunnel 9a2bb3c8-...).
+      # CF terminates TLS at the edge; Bitwarden's client-side crypto keeps
+      # the master password from ever reaching CF unencrypted.
+      ROCKET_PORT: "80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/alive"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # ── AmneziaWG (RKN-bypass tunnel for Russian friend) ───────────────────────
+  # Separate VPN stack from Headscale/Tailscale by design — friend's tunnel
+  # is completely isolated from the home mesh. Friend gets internet egress
+  # only; iptables rules in awg0.conf REJECT any path into LAN/Tailscale/Docker.
+  # Profile-gated: bring up with `docker compose --profile vpn-friend up -d`
+  # so it doesn't start unless intentionally requested.
+  amneziawg:
+    image: amneziavpn/amneziawg-go:latest
+    container_name: amneziawg
+    profiles: [vpn-friend]
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    ports:
+      - "0.0.0.0:51234:51234/udp"  # public UDP (router must port-forward this)
+    volumes:
+      - ./amneziawg-config:/etc/amneziawg
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # awg-quick up exits after applying the interface — wrap so the container
+    # stays alive (which keeps the wg interface alive in the container's
+    # network namespace). On stop, awg-quick down cleans up iptables rules.
+    command:
+      - "sh"
+      - "-c"
+      - >
+        awg-quick up /etc/amneziawg/awg0.conf &&
+        trap 'awg-quick down /etc/amneziawg/awg0.conf' TERM INT &&
+        tail -f /dev/null & wait
+    networks:
+      - metamcp-network
+
+  # ── Headscale (private mesh control plane) ─────────────────────────────────
+  # Phase 1: bound to 127.0.0.1 only — internal use, NOT internet-reachable.
+  # Phase 2 will put a reverse proxy with HTTPS + a real domain in front.
+  # Until then, Tailscale clients can register only when they can reach
+  # 127.0.0.1:8080 — i.e. the host itself, OR via SSH tunnel from another
+  # device on the home network. That's by design — keep the coordination
+  # endpoint un-exposed until we're ready to harden it.
+  headscale:
+    image: headscale/headscale:0.26.1
+    container_name: headscale
+    restart: unless-stopped
+    ports:
+      # 2026-05-16: moved 8099 -> 8081 (port 8099 collides with watchdog.py).
+      # CF Tunnel public hostname headscale.your-domain.example.com should map to localhost:8081.
+      - "127.0.0.1:8081:8080"   # coordination + UI (HTTP — Phase 2 adds HTTPS via CF Tunnel)
+      - "127.0.0.1:9090:9090"   # metrics
+    volumes:
+      - ./headscale-data:/var/lib/headscale
+      - ./headscale-config:/etc/headscale
+    command: ["serve"]
+    environment:
+      TZ: "Asia/Singapore"
+    # Note: headscale image is distroless (no /bin/sh) — use the binary directly.
+    healthcheck:
+      test: ["CMD", "headscale", "users", "list"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # ── Sentinel VPN dashboard ─────────────────────────────────────────────────
+  # Unified read-only status surface for the 4 VPN routes (CF Tunnel,
+  # Headscale, AmneziaWG, ARK direct). Mounts the host docker socket so
+  # it can `docker exec headscale|amneziawg` for live state. Bound to
+  # 127.0.0.1 — reachable via LAN, tailnet, or future CF Tunnel hostname.
+  sentinel-vpn-dashboard:
+    build:
+      context: ./sentinel-vpn-dashboard
+      dockerfile: Dockerfile
+    container_name: sentinel-vpn-dashboard
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8097"
+    environment:
+      OWNER_AUTH_TOKEN: ${OWNER_AUTH_TOKEN}
+    volumes:
+      # Read-only socket — service only needs `docker exec`, never to spawn
+      # new containers. Belt + suspenders.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - metamcp-network
+
+  # ── Zone A exit node — PIA dedicated IP via gluetun + Tailscale sidecar
+  #     (profile: vpn) ────────────────────────────────────────────────────────
+  #
+  # Architecture: two containers sharing a network namespace.
+  #   gluetun       — owns the network namespace. Connects to PIA via
+  #                   WireGuard using the dedicated-IP config. Provides
+  #                   the actual egress tunnel.
+  #   tailscale-pia — joins the same namespace. Authenticates to the
+  #                   Tailscale mesh, advertises itself as an exit node.
+  #                   When mesh peers tagged `tag:owner` opt into "Use
+  #                   exit node = sentinel-pia-exit", their traffic
+  #                   enters this namespace via tailscale0 and leaves
+  #                   via gluetun's PIA tun device.
+  #
+  # User actions required before first `up`:
+  #   1. scripts/rotate_pia_creds.ps1   — paste PIA user/pass, stored in WCM
+  #   2. Tailscale admin console        — generate an auth key tagged
+  #                                       `tag:owner` (or whichever tag
+  #                                       you've decided owns exit nodes)
+  #   3. Add the TS_AUTHKEY to .env.local via sync_env_from_wcm.ps1
+  #
+  # First-time bring-up:
+  #   docker compose --env-file .env.local --profile vpn up -d pia-exit tailscale-pia
+  pia-exit:
+    profiles: [vpn]
+    image: qmcgaw/gluetun:v3
+    container_name: pia-exit
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      # Both forwards required by Tailscale exit-node mode. Without
+      # v6 forwarding=1, Tailscale shows "Unable to relay traffic" in
+      # the admin Edit-route-settings dialog even when v4 is fine.
+      # Note: tailscale-pia inherits these via network_mode service:pia-exit.
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.forwarding: 1
+    environment:
+      VPN_SERVICE_PROVIDER: private internet access
+      # gluetun v3 ships PIA support over OpenVPN only (not WireGuard).
+      # PIA dedicated IP is auto-assigned based on the account that owns
+      # the DIP order — no extra token needed for OpenVPN path.
+      VPN_TYPE: openvpn
+      OPENVPN_USER:     ${PIA_USER:?PIA_USER must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      OPENVPN_PASSWORD: ${PIA_PASSWORD:?PIA_PASSWORD must be set in .env.local}
+      SERVER_REGIONS:   ${PIA_REGION:-Singapore}
+      TZ: "Asia/Singapore"
+      # Healthcheck pings 1.1.1.1 via the tunnel; if PIA drops it fails fast.
+      HEALTH_TARGET_ADDRESS: 1.1.1.1:443
+    volumes:
+      - pia_exit_data:/gluetun
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=5", "https://am.i.mullvad.net/json"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  tailscale-pia:
+    profiles: [vpn]
+    image: tailscale/tailscale:stable
+    container_name: tailscale-pia
+    restart: unless-stopped
+    # Share the network namespace of pia-exit so all this container's
+    # outbound traffic exits via gluetun → PIA → internet.
+    network_mode: "service:pia-exit"
+    depends_on:
+      pia-exit:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      TS_AUTHKEY:    ${TS_AUTHKEY_PIA_EXIT:?TS_AUTHKEY_PIA_EXIT must be set in .env.local — generate at https://login.tailscale.com/admin/settings/keys}
+      TS_HOSTNAME:   sentinel-pia-exit
+      TS_STATE_DIR:  /var/lib/tailscale
+      TS_USERSPACE:  "false"
+      # Sugar-free form of --advertise-exit-node. (The shortcut form
+      # doesn't parse correctly when passed via the tailscale Docker
+      # image's wrapper; the underlying tailscaled needs the explicit
+      # --advertise-routes form.)
+      # --accept-dns=false:    we don't want this exit node hijacking DNS for mesh peers
+      # Note: --advertise-tags=tag:owner is intentionally NOT set yet —
+      # tag:owner needs to be declared in Tailscale ACL's `tagOwners` first
+      # (that's the Phase 1 work). Add this arg once the ACL has the tag.
+      TS_EXTRA_ARGS: "--advertise-routes=0.0.0.0/0,::/0 --accept-dns=false"
+    volumes:
+      - tailscale_pia_state:/var/lib/tailscale
+
+  # ── Optional: media downloader (profile: media) ─────────────────────────────
+
+  smdl:
+    profiles: [media]
+    build:
+      context: ../sentinel-smdl
+      dockerfile: Dockerfile
+    container_name: smdl
+    restart: unless-stopped
+    user: "0:0"
+    env_file:
+      - .env.local
+    ports:
+      - "127.0.0.1:8096:8096"
+      # Loopback-only. See vaultwarden note: if tailscale serve already
+      # holds this port, Docker's bind silently fails — clear the serve
+      # first, then recreate, then re-enable.
+    environment:
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      CONFIG_FILE: /config/smdl.json
+      # File delivery (Path 1 + 2 in scope doc)
+      SMDL_PUBLIC_BASE_URL: "https://media.your-domain.example.com"
+      SMDL_TAILNET_HOST: "sentinel-host.tail00dd59.ts.net"
+      SMDL_SHARE_SECRET: ${SMDL_SHARE_SECRET:?SMDL_SHARE_SECRET must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      # Telegram Mini App URL — /dashboard and /app commands open this in the WebView.
+      WEBAPP_URL: "https://media.your-domain.example.com/app"
+      # Bot token for Mini App initData validation (PR #1, app/miniapp.py).
+      # Inherited from .env.local — TELEGRAM_BOT_TOKEN is already set there.
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    volumes:
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}:/downloads"
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}/cookies:/cookies"
+      - "./smdl/config:/config"
+      - smdl_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+  # ── Optional: Firefly III financial tracking (profile: finance) ─────────────
+
+  # Note: defaults below match the original docker-compose.firefly.yml so the
+  # existing firefly_db volume keeps working unchanged. To rotate, set
+  # FIREFLY_DB_PASSWORD + FIREFLY_APP_KEY in .env.local AND drop+recreate the
+  # firefly_db volume (data loss — back up your Firefly export first).
+  firefly:
+    profiles: [finance]
+    image: fireflyiii/core:latest
+    container_name: firefly
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - firefly_upload:/var/www/html/storage/upload
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_KEY: ${FIREFLY_APP_KEY:-base64:8JchMGtul6+LRLR3+sL63lUC0jgAGsEvXh7vBFZ782Y=}
+      DB_CONNECTION: pgsql
+      DB_HOST: firefly-db
+      DB_PORT: 5432
+      DB_DATABASE: firefly
+      DB_USERNAME: ${FIREFLY_DB_USER:-firefly}
+      DB_PASSWORD: ${FIREFLY_DB_PASSWORD:-firefly_pass}
+      TRUSTED_PROXIES: "**"
+      APP_URL: "https://firefly.your-domain.example.com"
+      DEFAULT_LANGUAGE: "en_US"
+      DEFAULT_LOCALE: "equal"
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      MAIL_MAILER: "null"
+      SEND_REGISTRATION_MAIL: "false"
+      SEND_ERROR_MESSAGE: "false"
+      SITE_OWNER: ${FIREFLY_OWNER_EMAIL:-your@email.com}
+    depends_on:
+      firefly-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - firefly-net
+
+  firefly-db:
+    profiles: [finance]
+    image: postgres:16-alpine
+    container_name: firefly-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: firefly
+      POSTGRES_USER: ${FIREFLY_DB_USER:-firefly}
+      POSTGRES_PASSWORD: ${FIREFLY_DB_PASSWORD:-firefly_pass}
+    volumes:
+      - firefly_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FIREFLY_DB_USER:-firefly} -d firefly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - firefly-net
+
+  firefly-importer:
+    profiles: [finance]
+    image: fireflyiii/data-importer:latest
+    container_name: firefly-importer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8181:8080"
+    environment:
+      # FIREFLY_III_URL: how the importer container talks to Firefly
+      #   server-to-server (Docker network DNS).
+      # VANITY_URL: how the USER's browser sees Firefly — used to
+      #   build OAuth redirect URLs. Must match the URL you actually
+      #   access Firefly at (host-mapped port 8180), NOT the importer's
+      #   own URL.
+      FIREFLY_III_URL:        "http://firefly:8080"
+      VANITY_URL:             "https://firefly.your-domain.example.com"
+      FIREFLY_III_ACCESS_TOKEN: ${FIREFLY_API_TOKEN:-}
+      TRUSTED_PROXIES:        "**"
+      APP_ENV:                "local"
+      # Upload limit boost — yearly CSVs can exceed default 2 MB
+      PHP_UPLOAD_MAX_FILESIZE: "16M"
+      PHP_POST_MAX_SIZE:       "16M"
+    depends_on:
+      firefly:
+        condition: service_healthy
+    networks:
+      - firefly-net
+
+  # ── Self-hosted Git (profile: journal) ──────────────────────────────────────
+  # Forgejo — locally-hosted GitHub-equivalent for private repos that should
+  # never go online. The "secret journal" tier of our git workflow:
+  #
+  #   forgejo (here, loopback)  → unsanitized full-fidelity history
+  #   github.com/YOUR_GITHUB_USERNAME/*     → sanitized public mirrors (post-carve-out)
+  #
+  # Default-deny: bound to 127.0.0.1 only. No public exposure unless we
+  # later add a Cloudflare Tunnel / Tailscale serve in front of it.
+  forgejo:
+    profiles: [journal]
+    image: codeberg.org/forgejo/forgejo:9
+    container_name: forgejo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"   # web UI
+      - "127.0.0.1:2222:22"     # git over SSH (host port 2222 → container 22)
+    volumes:
+      - forgejo_data:/var/lib/gitea
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      # Server identity — keep it generic so we can later put a Cloudflare
+      # Tunnel hostname in front without rebuilding.
+      FORGEJO__server__DOMAIN: localhost
+      FORGEJO__server__SSH_DOMAIN: localhost
+      FORGEJO__server__SSH_PORT: 2222
+      FORGEJO__server__ROOT_URL: "http://localhost:3000/"
+      FORGEJO__database__DB_TYPE: sqlite3
+      # Single-user privacy posture — no public sign-ups, every page requires
+      # login. Matches the "secret journal" framing.
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
+      FORGEJO__service__SHOW_REGISTRATION_BUTTON: "false"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+# ── Volumes (names preserved for data continuity) ────────────────────────────
+
+volumes:
+  metamcp_local_postgres_data:
+    driver: local
+  ytdlp_mcp_data:
+    driver: local
+  reminders_mcp_data:
+    driver: local
+  shopping_mcp_data:
+    driver: local
+  portfolio_mcp_data:
+    driver: local
+  portfolio_mcp_test_data:
+    driver: local
+  memory_mcp_data:
+    driver: local
+  onedrive_mcp_data:
+    driver: local
+  libretranslate_models:
+    driver: local
+  forgejo_data:
+  pia_exit_data:
+  smdl_data:
+  tailscale_pia_state:
+    driver: local
+  firefly_upload:
+    driver: local
+  firefly_db:
+    driver: local
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+
+networks:
+  metamcp-network:
+    driver: bridge
+  firefly-net:
+    driver: bridge

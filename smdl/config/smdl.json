@@ -1,0 +1,29 @@
+{
+  "allowed_chat_ids": [],
+  "default_quality": "1080p",
+  "delete_after_send": false,
+  "language": "en",
+  "live_abort_on_session_fail": true,
+  "live_enabled": true,
+  "live_heartbeat_seconds": 300,
+  "live_max_concurrent": 1,
+  "live_max_height": 720,
+  "live_min_free_disk_gb": 10,
+  "live_platforms": [
+    "youtube",
+    "twitch",
+    "kick"
+  ],
+  "live_transcode_height": 0,
+  "live_transcode_keep_original": false,
+  "max_concurrent_downloads": 2,
+  "monitor_enabled": true,
+  "monitor_poll_interval_seconds": 300,
+  "monitor_probe_timeout_seconds": 30,
+  "onedrive_delete_after_upload": false,
+  "onedrive_folder": "/SMDL",
+  "onedrive_mode": "auto_after_send",
+  "owner_chat_id": YOUR_TELEGRAM_CHAT_ID,
+  "temp_ttl_hours": 24,
+  "timezone": "Asia/Singapore"
+}

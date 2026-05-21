@@ -1,0 +1,68 @@
+# GXS Bank FlexiLoan statement schema
+# NOTE: GXS-Savings filename label is a misnomer — these are actually FlexiLoan
+# (revolving credit) statements from GXS Bank, NOT savings accounts.
+bank: GXS Bank
+product: GXS FlexiLoan
+account_class: 2  # liability
+gl_account_code: "2125"
+currency: SGD
+
+filename_patterns:
+  - "GXS.*\\.pdf"
+
+header_markers:
+  - "GXS FlexiLoan"
+
+account_number:
+  regex: "GXS FlexiLoan\\s+(\\d{3}-\\d{6}-\\d{2})"
+  example: "800-170405-95"
+
+statement_date:
+  regex: "(\\d{1,2}\\s+\\w+\\s+\\d{4})\\s+=\\s+GXS FlexiLoan"
+  format: "%d %B %Y"   # full month name
+
+payment_due_date:
+  regex: "Due on\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+credit_limit:
+  regex: "Total credit limit\\s+S\\$([\\d,]+\\.\\d{2})"
+
+balance_anchors:
+  opening: "Opening balance\\s+(-?[\\d,]+\\.\\d{2})"
+  # No standalone closing — derive from tx + opening
+
+tx_table:
+  columns: [DATE, DESCRIPTION, DRAWDOWN_CHARGES, PAYMENTS_REBATES, ACTIVITIES_BALANCE]
+  date_format: "%d %b %Y"   # full year
+
+# Each tx is a date + description (which may span lines) + a sometimes-blank charges/payments/balance row
+tx_header_regex: "^(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+(.+?)(?:\\s+([\\d,]+\\.\\d{2}))?(?:\\s+(-?[\\d,]+\\.\\d{2}))?$"
+
+tx_types:
+  - "Loan repayment"
+  - "Drawdown"
+  - "Interest"
+  - "Loan disbursement"
+  - "Opening balance"
+
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    - kind: time_marker
+      pattern: "^\\d{2}:\\d{2}\\s+(AM|PM)\\s+From\\s+(.+)$"
+      example: "04:36 PM From AZFAR HAKIM BIN ABDUL RAHMAN (PayNow)"
+    - kind: sub_loan_allocation
+      pattern: "^Paid S\\$([\\d.]+) to (.+)$"
+      example: "Paid S$55.18 to Emergency"
+      # Sub-loan allocations to multiple loan instalments
+
+# FlexiLoan has multiple sub-loans (instalments) under one master account
+sub_loans:
+  table_marker: "Loans"
+  per_loan_fields:
+    - name: "Emergency Instalment Loan"
+      remaining_repayable_regex: "Emergency.*?-S\\$([\\d,]+\\.\\d{2})"
+      paid_regex: "S\\$([\\d,]+\\.\\d{2}) paid"
+      instalments_left_regex: "(\\d+)/(\\d+) instalments left"
+      next_due_regex: "S\\$([\\d.]+) due on (\\d{1,2}\\s+\\w{3}\\s+\\d{4})"

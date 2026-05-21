@@ -1,0 +1,114 @@
+# HSBC Visa Revolution CC schema
+# IMPORTANT: HSBC statements are IMAGE-PDFs (no embedded text). Pipeline MUST
+# OCR via pdf2image (pdftoppm) + tesseract before applying this schema.
+bank: HSBC
+product: HSBC Visa Revolution
+account_class: 2
+gl_account_code: "2114"
+currency: SGD
+
+requires_ocr: true   # critical — pdfplumber returns ~1 char without OCR
+
+filename_patterns:
+  - "HSBC.*\\.pdf"
+
+header_markers:
+  - "HSBC VISA REVOLUTION"
+  - "HSBC Bank (Singapore) Limited"
+
+card_number:
+  regex: "(\\d{4}-\\d{4}-\\d{4}-\\d{4})"
+  example: "4835-8500-1783-5159"
+
+statement_period:
+  regex: "From\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+to\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+# Statement closing date = the "to" date in the period.
+statement_date:
+  regex: "to\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+payment_due_date:
+  regex: "Payment Due Date.*?(\\d{2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+total_due:
+  regex: "Total Due.*?([\\d,]+\\.\\d{2})"
+
+minimum_payment:
+  regex: "Minimum Payment\\s+([\\d,]+\\.\\d{2})"
+
+credit_limit:
+  regex: "Credit Limit \\(SGD\\)\\s+([\\d,]+\\.\\d{2})"
+
+cash_limit:
+  regex: "Cash Limit \\(SGD\\)\\s+([\\d,]+\\.\\d{2})"
+
+available_credit:
+  regex: "Available Credit \\(SGD\\)\\s+([\\d,]+\\.\\d{2})"
+
+balance_anchors:
+  previous: "Previous Statement Balance\\s+([\\d,]+\\.\\d{2})"
+  purchases_debits: "Purchases & Debits\\s+([\\d,]+\\.\\d{2})"
+  gst_charges: "GST Charges\\s+([\\d,]+\\.\\d{2})"
+  total_account_balance: "Total Account Balance\\s+([\\d,]+\\.\\d{2})"
+
+# OCR noise mitigation
+ocr_noise_patterns:
+  - "(?i)image[\\s_-]*pdf"
+  - "_+[\\s]*_+"          # OCR garbled underlines
+  - "^\\s*[a-z\\s]{1,3}\\s*$"  # spurious short lines
+
+# HSBC tx layout: POST_DATE TRAN_DATE DESCRIPTION AMOUNT[CR]
+# OCR quirks observed: no space between day+month ("19Mar"), letter substitutions
+# (02→oz, 01→ol, DBS→bgs), occasional decimal misread (2.000.00 vs 2,000.00).
+# Schema-side handling: regex captures only post_date as the tx date (sufficient
+# for daily granularity); parser does OCR-aware pre-cleanup.
+tx_table:
+  columns: [POST_DATE, TRAN_DATE, DESCRIPTION, AMOUNT]
+  date_format: "%d %b"
+  amount_sign:
+    suffix_CR: credit
+    default: debit
+
+# Two-date format. Day and month may or may not have a space between them due
+# to OCR. Description can contain spaces. Amount may have either comma or
+# period as thousand-separator (OCR-misread).
+# Capture groups (order required by parse_multiline_transactions):
+#   1=post_day  2=post_month  3=description  4=amount  5=CR_suffix
+# Second (tran) date is non-capturing.
+tx_header_regex: "^(\\d{1,2})\\s*(\\w{3})\\s+(?:\\d{1,2})\\s*(?:\\w{3})\\s+(.+?)\\s+([\\d.,]+\\.\\d{2})\\s*(CR)?\\s*$"
+
+# OCR text-cleanup rules applied BEFORE regex matching.
+# Tesseract OCR consistently misreads digits as visually-similar letters at HSBC's
+# font/resolution: 0→o, 1→l, 2→z. The cleanup converts these back where the
+# context unambiguously demands a digit (followed by a month abbreviation).
+ocr_text_cleanup:
+  # Digit-letter confusions when followed by a month abbreviation.
+  # "oz Apr" / "ozApr" → "02 Apr"  (0→o, 2→z)
+  - { pattern: "(?m)^oz\\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", replacement: "02\\1" }
+  - { pattern: "\\boz\\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", replacement: "02\\1" }
+  # "ol Apr" / "olApr" → "01 Apr"  (0→o, 1→l)
+  - { pattern: "(?m)^ol\\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", replacement: "01\\1" }
+  - { pattern: "\\bol\\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", replacement: "01\\1" }
+  # Standalone "l" followed by month → "1"
+  - { pattern: "(?m)^l\\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", replacement: "1\\1" }
+  # "o" before single digit + month → "0"  (e.g. "o2Apr")
+  - { pattern: "\\bo(\\d)\\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)", replacement: "0\\1\\2" }
+  # Insert space between day-number and 3-letter month: "19Mar" → "19 Mar"
+  - { pattern: "(\\d{1,2})(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\b", replacement: "\\1 \\2" }
+  # Decimal-thousand confusion: "2.000.00" → "2,000.00"  (only when 3 digits between)
+  - { pattern: "(\\d)\\.(\\d{3})\\.(\\d{2})", replacement: "\\1,\\2.\\3" }
+  # Common HSBC merchant OCR misreads
+  - { pattern: "\\bbgs\\b", replacement: "DBS" }
+  - { pattern: "\\bse\\s+(\\d)", replacement: "SG \\1" }
+
+# Rewards summary block (informational, not posted)
+rewards_summary:
+  total_points_regex: "Total Points Available\\s+(\\d+)"
+
+# Late payment / finance charges
+late_fee: 100
+finance_charge_rate_purchases: 27.80
+finance_charge_rate_cash: 28.50

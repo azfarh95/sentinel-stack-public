@@ -1,0 +1,45 @@
+# Sentinel Finance — Recurring Schedule
+#
+# Single source of truth for Cash Forecast projection. Drives /cash_forecast page.
+# Income entries land in POSB on `day`. Expenses leave POSB on `day`.
+#
+# Edit via Mini App: /cash_forecast → "+ Add recurring" button. The form
+# appends to this file. You can also hand-edit + restart portfolio-mcp.
+
+income:
+  - name: "AZ United (main monthly salary)"
+    amount: 2649.00
+    day: 29              # day of month
+    source: "POSB"
+    enabled: true
+    note: "Main monthly payroll credit from AZ United Pte Ltd"
+
+  - name: "YourAgency Security (weekly)"
+    amount: 360.00
+    day: 7
+    source: "POSB"
+    enabled: false       # disabled 2026-05-13: superseded by calendar-driven scan (Primary + Bills + Deployments)
+    note: "Now driven by Google Calendar events in 'Deployments' calendar. See cash_forecast._youragency_deployments_in_range."
+
+expense:
+  # Insurance (calendar-verified amounts)
+  - { name: "Tokio Marine ILP (premium)",       amount: 418.45, day: 15, category: "Insurance/ILP (asset)", enabled: true }
+  - { name: "Singlife Savvy Invest (premium)",  amount: 252.85, day: 13, category: "Insurance/ILP (asset)", enabled: true }
+  - { name: "Singlife Whole Life",              amount: 96.55,  day: 26, category: "Insurance - Life",      enabled: true }
+  - { name: "Singlife Multipay CI",             amount: 83.70,  day: 27, category: "Insurance - CI",        enabled: true }
+  - { name: "Singlife Health Plus",             amount: 69.01,  day: 7,  category: "Insurance - Health",    enabled: true }
+  - { name: "Singlife Cancer Cover Plus II",    amount: 11.51,  day: 7,  category: "Insurance - CI",        enabled: true }
+  - { name: "Singlife Group Term Life",         amount: 3.05,   day: 9,  category: "Insurance - Term Life", enabled: true }
+
+  # Debt service (from liabilities-registry monthly totals; billing_day == debit day)
+  - { name: "DBS Cashline",                     amount: 73.15,  day: 5,  category: "Debt service",           enabled: true }
+  - { name: "DBS CC",                           amount: 327.78, day: 8,  category: "Debt service",           enabled: true }
+  - { name: "HSBC Credit Card",                 amount: 68.13,  day: 4,  category: "Debt service",           enabled: true }
+  - { name: "Maybank CC",                       amount: 106.97, day: 2,  category: "Debt service",           enabled: true }
+  - { name: "Maybank CreditAble Term Loan",     amount: 105.00, day: 20, category: "Debt service",           enabled: true }
+  - { name: "Standard Chartered CC",            amount: 323.95, day: 11, category: "Debt service",           enabled: true }
+  - { name: "SC Loan/BT",                       amount: 93.88,  day: 22, category: "Debt service",           enabled: true }
+  - { name: "UOB CashPlus",                     amount: 153.65, day: 12, category: "Debt service",           enabled: true }
+  - { name: "GXS FlexiLoan",                    amount: 177.41, day: 28, category: "Debt service",           enabled: true }
+  - { name: "EZ Loan",                          amount: 498.72, day: 7,  category: "Debt service",           enabled: true }
+  - { name: "Lending Bee",                      amount: 532.00, day: 28, category: "Debt service",           enabled: true }

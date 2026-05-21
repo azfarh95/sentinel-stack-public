@@ -1,0 +1,40 @@
+name: Sync to Public
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Make sanitize script executable
+        run: chmod +x scripts/sanitize-public.sh
+
+      - name: Run sanitization
+        run: bash scripts/sanitize-public.sh
+
+      - name: Push to public repo
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+        run: |
+          # Copy sanitized files into a fresh repo (no private history)
+          mkdir /tmp/public-sync
+          cp -r . /tmp/public-sync/
+          cd /tmp/public-sync
+          rm -rf .git
+          git init
+          git checkout -b master
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "sync: sanitized mirror from private repo [skip ci]"
+          git remote add public https://x-access-token:${PUBLIC_REPO_PAT}@github.com/azfarh95/sentinel-stack-public.git
+          git push public master:master --force

@@ -1,0 +1,90 @@
+# Secrets
+.env.local
+.env.local.backup-*
+*.env
+!.env.local.template
+secrets/
+auth-profiles.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Data / DB
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.sqlite3-shm
+*.sqlite3-wal
+data/
+
+# Vaultwarden — runtime data should NEVER be in source control
+# (sqlite journals, JWT signing key, attachments). Vault should
+# ultimately live in its own repo / out-of-tree dir; this rule is
+# a tripwire until that extraction happens.
+vaultwarden-data/
+
+# Session secrets / runtime keys
+.session_secret
+
+# Claude session transcripts (may contain secrets)
+watchdog/*.txt
+
+# Per-user contact registry (contains real Telegram chat IDs — do not commit)
+watchdog/contacts.json
+
+# Playwright MCP runtime artefacts (screenshots, console logs)
+.playwright-mcp/
+
+# Logs
+*.log
+*.txt.log
+*_err.txt
+logs/
+
+# Backups
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# One-off scripts
+send_ig.py
+
+# Local secrets config (use config.example.json as template)
+config.json
+
+# TOTP setup page — local only, never commit
+sentinel-miniapp/totp_setup.html
+sentinel-miniapp-v2/totp_setup.html
+
+# GitHub Actions — allow our workflows, keep upstream CI/CD out of tracking
+# .github/ was previously ignored; now tracking only our own workflows
+!.github/
+!.github/workflows/
+.github/workflows/dependabot.yml
+
+# Headscale runtime DB + private keys (Phase 1, 2026-05-10)
+headscale-data/
+
+# AmneziaWG (private keys + server config + client configs)
+amneziawg-config/
+amneziawg-data/
+
+# Vaultwarden snapshot backups — contain all WCM secrets, NEVER commit.
+# Created ad-hoc before risky operations (e.g. token rotation). Restore via
+# stop+swap of /vw-data volume if you need to roll back.
+vaultwarden-data.bak-*/
+vaultwarden-data.bak*/
+.turbo/

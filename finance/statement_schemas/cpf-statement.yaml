@@ -1,0 +1,55 @@
+# CPF Transaction History (Singapore CPF Board) schema
+issuer: Central Provident Fund Board
+type: cpf_contribution_history
+account_class: 1  # asset (CPF balances are an asset on personal balance sheet)
+gl_account_codes:
+  OA: "1211"
+  SA: "1212"
+  MA: "1213"
+  RA: "1214"
+currency: SGD
+
+filename_patterns:
+  - "CPF.*\\.pdf"
+  - ".*CPF Statement.*\\.pdf"
+  - "15 Months contribution\\.pdf"
+
+header_markers:
+  - "CPF Account Number"
+  - "Transaction history"
+
+cpf_account_number:
+  regex: "CPF Account Number:\\s*(S\\d+[A-Z])"
+  example: "S9528246F"
+
+statement_period:
+  regex: "\\(From\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+to\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\)"
+  format: "%d %b %Y"
+
+tx_table:
+  columns: [DATE, CODE, MTH_YEAR, REF, OA_AMOUNT, SA_AMOUNT, MA_AMOUNT]
+  date_format: "%d %b %Y"
+
+tx_header_regex: "^(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+(\\w{3})\\s+(\\w{3}\\s+\\d{4})\\s+([A-Z])\\s+([\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})$"
+# 13 Dec 2024 CON NOV 2024 A 717.45 187.06 249.49
+
+# Reference letter maps to employer name (defined at bottom of statement)
+ref_employer_map_regex: "REF\\s+([A-Z])\\s*:\\s*(.+)$"
+# A : AZ UNITED PTE. LTD.
+# B : HENDERSON SECURITY SERVICES PTE. LTD.
+
+# Code dictionary in appendix (CON = contribution, INV = investment, INT = interest, etc.)
+code_definitions:
+  CON: Contribution / Government Cash Grant / Top-up
+  INT: Interest for the whole year
+  INV: CPF Investment Scheme
+  ADJ: Adjustment / Interest on recovered CPF contributions
+  ESB: Earn and Save Bonus
+  GOV: Government Cash Benefits
+  HPS: Home Protection Scheme
+  HSE: HDB flats and other residential properties
+  IPA: ITE Progression Award
+
+# Posting template:
+# Per CON line: DR 1211 OA + DR 1212 SA + DR 1213 MA, CR 4110/4120/4130 by REF employer + CR 5410 Employer-CPF expense
+posting_template: cpf_contribution_v1

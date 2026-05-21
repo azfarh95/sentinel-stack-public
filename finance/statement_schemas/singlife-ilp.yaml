@@ -1,0 +1,81 @@
+# Singlife ILP Investment Transaction Statement schema
+# Covers Savvy Invest (P4064051) and other Singlife ILP products.
+bank: Singapore Life
+product: Singlife ILP (Investment-Linked Plan)
+account_class: 1  # asset
+gl_account_code: "1222"  # Singlife ILP — Savvy Invest specifically; other ILPs use sibling 5-digit leaves
+currency: SGD
+
+filename_patterns:
+  - "Singlife.*statement.*\\.pdf"
+  - "Savvy Invest.*\\.pdf"
+  - "_Temp_\\d+_\\d{2}_\\d{2}_1RS\\w+\\.pdf"  # Singlife eStatement system uses this prefix
+
+header_markers:
+  - "Investment Transaction Statement"
+  - "Singapore Life Ltd"
+
+policy_number:
+  regex: "PolicyNumber\\s*:\\s*(P\\d+)"
+  example: "P4064051"
+
+policy_plan:
+  regex: "Plan\\s*:\\s*(.+)$"
+  example: "SinglifeSavvyInvest"
+
+statement_period:
+  regex: "\\((\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+to\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\)"
+  format: "%d %b %Y"
+
+statement_date:
+  # Singlife statements have a date in header right under contact info
+  regex: "^(\\d{1,2}\\w+\\d{4})$"
+  format: "%d%B%Y"   # text is mashed: "13April2026"
+
+premium_amount:
+  regex: "PremiumAmount\\s*:\\s*([\\d,]+\\.\\d{2})\\s*\\((Monthly|Quarterly|Annually|Single)\\)"
+
+payment_method:
+  regex: "PaymentMethod\\s*:\\s*(GIRO|Cash|Bank Transfer)"
+
+inception_date:
+  regex: "InceptionDate\\s*:\\s*(\\d{1,2}\\w+\\d{4})"
+  format: "%d%B%Y"
+
+balance_anchors:
+  total_premiums_received: "TotalPremiumsReceived-RegularPremium\\s+([\\d,]+\\.\\d{2})"
+  basic_death_benefit: "BasicDeathBenefit\\s+([\\d,]+\\.\\d{2})"
+  total_net_cash_surrender_value: "TotalNetCashSurrenderValue\\s+([\\d,]+\\.\\d{2})"
+
+# Singlife has TWO transaction tables:
+# 1. Summary by transaction type
+# 2. Per-fund detail (Opening Balance, Reg.Premium, Dividend, AdministrativeCharge, SupplementaryCharge, ClosingBalance)
+summary_tx_table:
+  columns: [TRANSACTION_DATE, TRANSACTION_TYPE, TRANSACTION_AMOUNT]
+  date_format: "%d/%m/%Y"
+  amount_sign:
+    trailing_dash: charge      # "5.33-" means deducted (asset DOWN)
+    default: contribution      # "250.00" means premium added (asset UP)
+
+per_fund_tx_table:
+  fund_section_markers:
+    - "AllianzIncandGrowthAMH2SGD"
+    - "BGFWrldHealthsciFndA2SGDHedged"
+    - "InfinityU.S.500StockIndexSGD"
+  columns: [TRANSACTION_TYPE, FUND_PLACEMENT_DATE, FUND_CURRENCY, EXCHANGE_RATE, NUMBER_OF_UNITS, UNIT_PRICE, AMOUNT, FUND_BALANCE]
+  fund_balance_anchors:
+    opening: "OpeningBalance\\s+(\\d{2}/\\d{2}/\\d{4})\\s+SGD\\s+([\\d,.]+)\\s+([\\d.]+)\\s+([\\d,.]+)"
+    closing: "ClosingBalance\\s+(\\d{2}/\\d{2}/\\d{4})\\s+SGD\\s+([\\d,.]+)\\s+([\\d.]+)\\s+([\\d,.]+)"
+
+# Singlife text often has spaces collapsed (e.g. "PolicyNumber" not "Policy Number").
+# Parser must normalise: insert spaces around camelCase before regex matching, OR
+# use regex with optional whitespace between every word boundary.
+text_normalisation: "insert_space_camelcase"
+
+# Singlife policies are tied to a specific GIRO from POSB.
+# POSB tx that reads "SINGAPORE LIFE LTD\nP4064051170373766\nP4064051"
+# is the BANK-SIDE counterpart of this Singlife statement.
+# Reconciler must link the two via policy_number + amount.
+bank_side_match:
+  bank_pattern: "P\\d{7,}"
+  amount_match: premium_amount

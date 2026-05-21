@@ -1,0 +1,59 @@
+# Credit Bureau Singapore (CBS) Enhanced Consumer Credit Report schema
+# NOT a tx ledger — drives credit_facility registry + reconciliation.
+issuer: Credit Bureau Singapore Pte Ltd
+type: credit_report
+is_tx_ledger: false   # snapshot data, not journal lines
+currency: SGD
+
+filename_patterns:
+  - "CBS.*\\.pdf"
+  - "Credit Report.*\\.pdf"
+  - "Enhanced Consumer Credit Report.*\\.pdf"
+
+header_markers:
+  - "Enhanced Consumer Credit Report"
+  - "Enquiry Number"
+
+enquiry_number_regex: "Enquiry Number\\s+(\\d+)"
+enquiry_date_regex: "Enquiry Date\\s+(\\d{2}/\\d{2}/\\d{4})"
+reference_regex: "Reference\\s+(1RS\\w+)"
+
+# Aggregate identity + summary
+summary:
+  name_regex: "Name\\s+(.+?)\\s+Date of Earliest Known"
+  nric_regex: "ID Number\\s+(\\w+\\d+\\w)"
+  date_of_birth_regex: "Date of Birth\\s+(\\d{2}/\\d{2}/\\d{4})"
+  total_accounts_regex: "Accounts\\s+(\\d+)"
+  previous_enquiries_regex: "Previous Enquiries\\s+(\\d+)"
+  defaults_regex: "Defaults\\s+(\\d+)"
+  unsecured_credit_limit_regex: "Unsecured Credit Limit\\s+([\\d,]+\\.\\d{2})"
+  secured_credit_limit_regex: "Secured Credit Limit\\s+([\\d,]+\\.\\d{2})"
+  exempted_credit_limit_regex: "Exempted Credit Limit\\s+([\\d,]+\\.\\d{2})"
+
+# Account status history table — one row per facility
+# Columns: Product Type, Grantor Bank, Account Type, Date Opened / Closed, Cash Advance / Balance Transfer Overdue Balance, Last 12 cycles / Full Payment
+
+# Status code dictionary (per CBS):
+status_codes:
+  A: Up to date or current
+  B: Less than 30 days past due
+  C: 30-59 days past due
+  D: 60-89 days past due
+  E: 90+ days past due
+  F: 120+ days past due
+  G: 150+ days past due
+  H: 180+ days past due
+  M: Mature / Final closure
+  N: No balance
+  Y: Yes — full payment received
+  "*": No info available
+  "-": No info / not applicable
+
+# Reconciliation use: snapshot facility list against credit_facilities table.
+# Sentinel uses this to detect MISSING facilities (e.g. a CC user forgot to add to Sentinel).
+reconciliation_targets:
+  - credit_facilities  # primary
+  - bank_product_registry  # cross-check that grantor banks are known
+
+# Posting template: NONE (snapshot only — does not post journals).
+# But trigger discrepancy_report event if CBS facility count > Sentinel facility count.

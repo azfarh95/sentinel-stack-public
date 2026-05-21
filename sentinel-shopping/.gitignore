@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.log
+*.log.*
+build.log
+mcp.log
+mcp.err.log
+*.db
+*.db-shm
+*.db-wal
+_inspect/
+*.html

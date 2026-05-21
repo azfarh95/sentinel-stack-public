@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sentinel Diagram — ASCII co-author</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d23;
+    --border: #2a2f37;
+    --fg: #d8dde6;
+    --accent: #5fa8ff;
+    --muted: #7a8290;
+    --tool-on: #5fa8ff;
+    --tool-off: #2a2f37;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font-family: -apple-system, system-ui, sans-serif; height: 100vh; overflow: hidden; }
+  header { padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+           display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 14px; font-weight: 600; color: var(--accent); }
+  .toolbar { display: flex; gap: 4px; align-items: center; }
+  .tool {
+    padding: 4px 10px; background: var(--tool-off); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+    font-size: 12px; font-family: monospace;
+  }
+  .tool.active { background: var(--tool-on); color: #0f1115; border-color: var(--tool-on); font-weight: 600; }
+  .tool:hover:not(.active) { background: #353a44; }
+  .spacer { flex: 1; }
+  .meta { color: var(--muted); font-size: 11px; font-family: monospace; }
+  main { display: flex; height: calc(100vh - 50px); }
+  .pane { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 0; }
+  .pane:last-child { border-right: none; }
+  .pane-label { padding: 4px 12px; background: var(--panel); border-bottom: 1px solid var(--border);
+                font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  textarea {
+    flex: 1; padding: 12px; background: var(--bg); color: var(--fg); border: none;
+    font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 13px;
+    line-height: 1.45; tab-size: 2; resize: none; white-space: pre; overflow: auto;
+  }
+  textarea:focus { outline: 1px solid var(--accent); }
+  .canvas-wrap { flex: 1; overflow: auto; background: var(--bg); padding: 8px; }
+  #canvas {
+    font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 14px;
+    line-height: 1.0; white-space: pre; cursor: crosshair;
+    display: inline-block; user-select: none;
+  }
+  #canvas span { display: inline-block; width: 1ch; height: 1.2em; }
+  #canvas span:hover { background: rgba(95,168,255,0.12); }
+  #canvas span.selected { background: rgba(95,168,255,0.35); }
+  #canvas span.in-textbox { background: rgba(95,168,255,0.06); }
+  .footer { padding: 4px 16px; background: var(--panel); border-top: 1px solid var(--border);
+            font-size: 11px; color: var(--muted); font-family: monospace; }
+  .charset-toggle { display: flex; gap: 0; }
+  .charset-toggle .tool { border-radius: 0; }
+  .charset-toggle .tool:first-child { border-radius: 4px 0 0 4px; }
+  .charset-toggle .tool:last-child { border-radius: 0 4px 4px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sentinel Diagram</h1>
+  <div class="toolbar">
+    <button class="tool active" data-tool="text" title="T: type text (default)">T text</button>
+    <button class="tool" data-tool="box" title="B: drag to draw box">▢ box</button>
+    <button class="tool" data-tool="textbox" title="X: drag a box AND type inside it">[Tx] textbox</button>
+    <button class="tool" data-tool="line" title="L: drag to draw line">— line</button>
+    <button class="tool" data-tool="arrow" title="A: drag to draw arrow">→ arrow</button>
+    <button class="tool" data-tool="erase" title="E: drag to erase">⌫ erase</button>
+  </div>
+  <div class="charset-toggle toolbar">
+    <button class="tool active" data-charset="unicode" title="Unicode box-drawing chars (┌─┐│└┘)">unicode</button>
+    <button class="tool" data-charset="ascii" title="Plain ASCII (+-|)">ascii</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="meta" id="meta">— × —</div>
+  <button class="tool" id="btn-clear" title="Clear canvas">clear</button>
+  <button class="tool" id="btn-save">↓ save</button>
+  <input type="file" id="file-open" style="display:none" accept=".txt,.md,.ascii">
+  <button class="tool" id="btn-open">↑ open</button>
+</header>
+<main>
+  <section class="pane">
+    <div class="pane-label">visual canvas — click to type, drag for shapes</div>
+    <div class="canvas-wrap"><div id="canvas" tabindex="0"></div></div>
+  </section>
+  <section class="pane">
+    <div class="pane-label">ascii text — edit either side, syncs both ways</div>
+    <textarea id="text" spellcheck="false" placeholder="Type here, or draw on the left. Edits sync both ways."></textarea>
+  </section>
+</main>
+<div class="footer">
+  shortcuts: <b>T</b> text · <b>B</b> box · <b>X</b> textbox · <b>L</b> line · <b>A</b> arrow · <b>E</b> erase · <b>esc</b> exit textbox / deselect · <b>ctrl+s</b> save · <b>ctrl+z</b>/<b>ctrl+y</b> undo/redo
+</div>
+
+<script>
+"use strict";
+
+const W = 120, H = 40;
+const CANVAS = document.getElementById("canvas");
+const TEXTAREA = document.getElementById("text");
+const META = document.getElementById("meta");
+
+let charset = "unicode";   // 'unicode' | 'ascii'
+let tool = "text";
+let cells = Array.from({length: H}, () => Array(W).fill(" "));
+let history = [];
+let redoStack = [];
+const HISTORY_MAX = 100;
+
+// Cursor for typing in text mode
+let cursorRow = 0, cursorCol = 0;
+let dragging = false, dragStart = null;
+// When set, typing is constrained inside this rectangle.
+// {rA, cA, rB, cB} are absolute outer-box coords (border cells).
+// Interior typing area is (rA+1..rB-1, cA+1..cB-1).
+let activeTextBox = null;
+
+const GLYPHS = {
+  unicode: {
+    h: "─", v: "│",
+    tl: "┌", tr: "┐", bl: "└", br: "┘",
+    cross: "┼", tdown: "┬", tup: "┴", tright: "├", tleft: "┤",
+    arrR: "→", arrL: "←", arrU: "↑", arrD: "↓",
+  },
+  ascii: {
+    h: "-", v: "|",
+    tl: "+", tr: "+", bl: "+", br: "+",
+    cross: "+", tdown: "+", tup: "+", tright: "+", tleft: "+",
+    arrR: ">", arrL: "<", arrU: "^", arrD: "v",
+  },
+};
+
+function g(name) { return GLYPHS[charset][name]; }
+
+function pushHistory() {
+  history.push(cells.map(row => row.slice()));
+  if (history.length > HISTORY_MAX) history.shift();
+  redoStack.length = 0;
+}
+
+function undo() {
+  if (history.length === 0) return;
+  redoStack.push(cells.map(row => row.slice()));
+  cells = history.pop();
+  render();
+  syncToText();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  history.push(cells.map(row => row.slice()));
+  cells = redoStack.pop();
+  render();
+  syncToText();
+}
+
+function render() {
+  const fragments = [];
+  for (let y = 0; y < H; y++) {
+    const row = cells[y];
+    for (let x = 0; x < W; x++) {
+      const ch = row[x] === " " ? " " : row[x];
+      const isCursor = (y === cursorRow && x === cursorCol);
+      const tb = activeTextBox;
+      const inTextbox = tb && y > tb.rA && y < tb.rB && x > tb.cA && x < tb.cB;
+      let cls = "";
+      if (isCursor) cls = ' class="selected"';
+      else if (inTextbox) cls = ' class="in-textbox"';
+      fragments.push(`<span data-r="${y}" data-c="${x}"${cls}>${escapeHtml(ch)}</span>`);
+    }
+    fragments.push("\n");
+  }
+  CANVAS.innerHTML = fragments.join("");
+  if (activeTextBox) {
+    const tb = activeTextBox;
+    const w = tb.cB - tb.cA - 1, h = tb.rB - tb.rA - 1;
+    META.textContent = `${W}x${H}  -  cursor (${cursorRow + 1}, ${cursorCol + 1})  -  textbox ${w}x${h} (esc to exit)`;
+    return;
+  }
+  META.textContent = `${W} × ${H}  •  cursor (${cursorRow + 1}, ${cursorCol + 1})`;
+}
+
+function escapeHtml(ch) {
+  return ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === "&" ? "&amp;" : ch;
+}
+
+function syncToText() {
+  // Serialize canvas → trim trailing spaces per line
+  const lines = cells.map(row => {
+    const joined = row.join("");
+    return joined.replace(/\s+$/, "");
+  });
+  // Drop trailing empty lines
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  TEXTAREA.value = lines.join("\n");
+}
+
+function syncFromText() {
+  pushHistory();
+  cells = Array.from({length: H}, () => Array(W).fill(" "));
+  const lines = TEXTAREA.value.split(/\r?\n/);
+  for (let y = 0; y < Math.min(lines.length, H); y++) {
+    const line = lines[y];
+    for (let x = 0; x < Math.min(line.length, W); x++) {
+      cells[y][x] = line[x] || " ";
+    }
+  }
+  render();
+}
+
+function setCell(r, c, ch) {
+  if (r < 0 || r >= H || c < 0 || c >= W) return;
+  cells[r][c] = ch;
+}
+
+function drawBox(r1, c1, r2, c2) {
+  pushHistory();
+  const [rA, rB] = r1 < r2 ? [r1, r2] : [r2, r1];
+  const [cA, cB] = c1 < c2 ? [c1, c2] : [c2, c1];
+  for (let c = cA + 1; c < cB; c++) {
+    setCell(rA, c, g("h"));
+    setCell(rB, c, g("h"));
+  }
+  for (let r = rA + 1; r < rB; r++) {
+    setCell(r, cA, g("v"));
+    setCell(r, cB, g("v"));
+  }
+  setCell(rA, cA, g("tl"));
+  setCell(rA, cB, g("tr"));
+  setCell(rB, cA, g("bl"));
+  setCell(rB, cB, g("br"));
+}
+
+function drawLine(r1, c1, r2, c2, withArrow) {
+  pushHistory();
+  // Manhattan: horizontal then vertical (or vice-versa for shortest path)
+  const dr = r2 - r1, dc = c2 - c1;
+  if (Math.abs(dc) >= Math.abs(dr)) {
+    // Horizontal first
+    const cStep = dc > 0 ? 1 : -1;
+    for (let c = c1 + cStep; c !== c2 + cStep; c += cStep) {
+      if (c === c2 && dr !== 0) setCell(r1, c, "+");
+      else setCell(r1, c, g("h"));
+    }
+    const rStep = dr > 0 ? 1 : -1;
+    if (dr !== 0) {
+      for (let r = r1 + rStep; r !== r2 + rStep; r += rStep) {
+        if (r === r2 && withArrow) setCell(r, c2, dr > 0 ? g("arrD") : g("arrU"));
+        else setCell(r, c2, g("v"));
+      }
+    } else if (withArrow) {
+      setCell(r1, c2, dc > 0 ? g("arrR") : g("arrL"));
+    }
+  } else {
+    // Vertical first
+    const rStep = dr > 0 ? 1 : -1;
+    for (let r = r1 + rStep; r !== r2 + rStep; r += rStep) {
+      if (r === r2 && dc !== 0) setCell(r, c1, "+");
+      else setCell(r, c1, g("v"));
+    }
+    const cStep = dc > 0 ? 1 : -1;
+    if (dc !== 0) {
+      for (let c = c1 + cStep; c !== c2 + cStep; c += cStep) {
+        if (c === c2 && withArrow) setCell(r2, c, dc > 0 ? g("arrR") : g("arrL"));
+        else setCell(r2, c, g("h"));
+      }
+    } else if (withArrow) {
+      setCell(r2, c1, dr > 0 ? g("arrD") : g("arrU"));
+    }
+  }
+}
+
+function eraseArea(r1, c1, r2, c2) {
+  pushHistory();
+  const [rA, rB] = r1 < r2 ? [r1, r2] : [r2, r1];
+  const [cA, cB] = c1 < c2 ? [c1, c2] : [c2, c1];
+  for (let r = rA; r <= rB; r++)
+    for (let c = cA; c <= cB; c++)
+      setCell(r, c, " ");
+}
+
+// ── Event wiring ─────────────────────────────────────────────────────────
+
+CANVAS.addEventListener("mousedown", (e) => {
+  if (e.target.tagName !== "SPAN") return;
+  const r = +e.target.dataset.r, c = +e.target.dataset.c;
+  cursorRow = r; cursorCol = c;
+  if (tool === "text") {
+    dragging = false;
+    render();
+    CANVAS.focus();
+    return;
+  }
+  dragging = true;
+  dragStart = [r, c];
+  e.preventDefault();
+});
+
+CANVAS.addEventListener("mousemove", (e) => {
+  if (!dragging || e.target.tagName !== "SPAN") return;
+  cursorRow = +e.target.dataset.r;
+  cursorCol = +e.target.dataset.c;
+  render();
+});
+
+CANVAS.addEventListener("mouseup", (e) => {
+  if (!dragging || e.target.tagName !== "SPAN") return;
+  const r = +e.target.dataset.r, c = +e.target.dataset.c;
+  dragging = false;
+  if (tool === "box") drawBox(dragStart[0], dragStart[1], r, c);
+  else if (tool === "textbox") {
+    drawBox(dragStart[0], dragStart[1], r, c);
+    // Lock textbox bounds + auto-switch to text mode with cursor inside
+    const [rA, rB] = dragStart[0] < r ? [dragStart[0], r] : [r, dragStart[0]];
+    const [cA, cB] = dragStart[1] < c ? [dragStart[1], c] : [c, dragStart[1]];
+    if (rB - rA >= 2 && cB - cA >= 2) {
+      activeTextBox = {rA, cA, rB, cB};
+      cursorRow = rA + 1; cursorCol = cA + 1;
+      // Switch tool to "text" but keep activeTextBox so typing is constrained
+      tool = "text";
+      document.querySelectorAll(".tool[data-tool]").forEach(b =>
+        b.classList.toggle("active", b.dataset.tool === "text"));
+      CANVAS.focus();
+    }
+  }
+  else if (tool === "line") drawLine(dragStart[0], dragStart[1], r, c, false);
+  else if (tool === "arrow") drawLine(dragStart[0], dragStart[1], r, c, true);
+  else if (tool === "erase") eraseArea(dragStart[0], dragStart[1], r, c);
+  render();
+  syncToText();
+});
+
+CANVAS.tabIndex = 0;
+CANVAS.addEventListener("keydown", (e) => {
+  if (tool !== "text") return;
+  // Bounds when constrained by an active textbox; else full canvas
+  const tb = activeTextBox;
+  const rMin = tb ? tb.rA + 1 : 0;
+  const rMax = tb ? tb.rB - 1 : H - 1;
+  const cMin = tb ? tb.cA + 1 : 0;
+  const cMax = tb ? tb.cB - 1 : W - 1;
+
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+    pushHistory();
+    setCell(cursorRow, cursorCol, e.key);
+    // Advance + wrap within bounds
+    if (cursorCol < cMax) cursorCol++;
+    else if (cursorRow < rMax) { cursorRow++; cursorCol = cMin; }
+    // else: stay at end-of-textbox
+    render(); syncToText();
+    e.preventDefault();
+  } else if (e.key === "Backspace") {
+    pushHistory();
+    if (cursorCol > cMin) cursorCol--;
+    else if (cursorRow > rMin) { cursorRow--; cursorCol = cMax; }
+    setCell(cursorRow, cursorCol, " ");
+    render(); syncToText();
+    e.preventDefault();
+  } else if (e.key === "Enter") {
+    if (cursorRow < rMax) cursorRow++;
+    cursorCol = cMin;
+    render(); e.preventDefault();
+  } else if (e.key === "ArrowLeft")  { cursorCol = Math.max(cMin, cursorCol - 1); render(); e.preventDefault(); }
+  else if (e.key === "ArrowRight") { cursorCol = Math.min(cMax, cursorCol + 1); render(); e.preventDefault(); }
+  else if (e.key === "ArrowUp")    { cursorRow = Math.max(rMin, cursorRow - 1); render(); e.preventDefault(); }
+  else if (e.key === "ArrowDown")  { cursorRow = Math.min(rMax, cursorRow + 1); render(); e.preventDefault(); }
+});
+
+TEXTAREA.addEventListener("input", () => { syncFromText(); });
+
+document.querySelectorAll(".tool[data-tool]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    tool = btn.dataset.tool;
+    document.querySelectorAll(".tool[data-tool]").forEach(b => b.classList.toggle("active", b === btn));
+    CANVAS.focus();
+  });
+});
+
+document.querySelectorAll(".tool[data-charset]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    charset = btn.dataset.charset;
+    document.querySelectorAll(".tool[data-charset]").forEach(b => b.classList.toggle("active", b === btn));
+  });
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.target === TEXTAREA) {
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === "z") { e.preventDefault(); undo(); }
+      else if (e.key === "y") { e.preventDefault(); redo(); }
+    }
+    return;
+  }
+  // Global shortcuts
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === "s") { e.preventDefault(); saveDiagram(); }
+    else if (e.key === "z") { e.preventDefault(); undo(); }
+    else if (e.key === "y") { e.preventDefault(); redo(); }
+    return;
+  }
+  if (e.key === "Escape") {
+    if (activeTextBox) { activeTextBox = null; render(); return; }
+    cursorRow = 0; cursorCol = 0; render();
+  }
+  else if (e.key === "t" || e.key === "T") clickTool("text");
+  else if (e.key === "b" || e.key === "B") clickTool("box");
+  else if (e.key === "x" || e.key === "X") clickTool("textbox");
+  else if (e.key === "l" || e.key === "L") clickTool("line");
+  else if (e.key === "a" || e.key === "A") clickTool("arrow");
+  else if (e.key === "e" || e.key === "E") clickTool("erase");
+});
+
+function clickTool(name) {
+  const btn = document.querySelector(`[data-tool="${name}"]`);
+  if (btn) btn.click();
+}
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  if (!confirm("Clear the canvas?")) return;
+  pushHistory();
+  cells = Array.from({length: H}, () => Array(W).fill(" "));
+  render(); syncToText();
+});
+
+function saveDiagram() {
+  const blob = new Blob([TEXTAREA.value], {type: "text/plain"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "diagram-" + new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-") + ".txt";
+  a.click();
+}
+document.getElementById("btn-save").addEventListener("click", saveDiagram);
+
+document.getElementById("btn-open").addEventListener("click", () => {
+  document.getElementById("file-open").click();
+});
+document.getElementById("file-open").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  TEXTAREA.value = await file.text();
+  syncFromText();
+});
+
+// Initial render
+render();
+syncToText();
+CANVAS.focus();
+</script>
+</body>
+</html>

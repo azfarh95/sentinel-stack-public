@@ -1,0 +1,8 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+httpx==0.28.1
+# Pillow + python-multipart bumped 2026-05-21 to silence Dependabot.
+# Actual exposure is zero — Pillow only generates icons (Image.new), never
+# decodes user uploads. python-multipart is unused (dashboard is read-only).
+pillow==12.2.0
+python-multipart==0.0.27

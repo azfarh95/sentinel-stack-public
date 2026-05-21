@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenClaw</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="oc-header">
+    <div class="oc-title">
+      <span class="oc-logo">⟁</span>
+      <span>OpenClaw</span>
+    </div>
+    <div class="oc-status" id="oc-status">
+      <span class="oc-dot" id="oc-dot"></span>
+      <span id="oc-status-text">connecting…</span>
+    </div>
+    <button class="oc-new" id="oc-new" type="button" title="Start a fresh session (clears context)">＋ New</button>
+  </header>
+
+  <div class="oc-ctx" id="oc-ctx" hidden>
+    <span class="oc-ctx-text" id="oc-ctx-text">—</span>
+    <div class="oc-ctx-bar"><div class="oc-ctx-fill" id="oc-ctx-fill"></div></div>
+  </div>
+
+  <main class="oc-log" id="oc-log" aria-live="polite">
+    <div class="oc-empty" id="oc-empty">
+      <p>Talk to your local agent. It can see this tab via Playwright.</p>
+      <ul>
+        <li>“summarise this page”</li>
+        <li>“open <em>aaa.com</em> in a new tab”</li>
+        <li>“fill the search box with <em>foo</em>”</li>
+        <li>“what tools do you have?”</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer class="oc-input">
+    <textarea
+      id="oc-msg"
+      rows="2"
+      placeholder="Message OpenClaw…  (Shift+Enter for newline, Enter to send)"
+      autofocus
+    ></textarea>
+    <div class="oc-controls">
+      <span class="oc-meta" id="oc-meta"></span>
+      <button id="oc-send" type="button">Send</button>
+    </div>
+  </footer>
+
+  <script src="sidepanel.js" type="module"></script>
+</body>
+</html>

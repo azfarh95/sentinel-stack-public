@@ -1,0 +1,153 @@
+# POSB Savings (Deposit Account) statement schema
+# Confirmed against Jan 2024 + Jan-Apr 2026 PDFs.
+# This schema drives universal_pdf_parser.py and replaces Firefly's POSB import.
+
+bank: POSB
+product: POSB Savings / Deposit Account
+account_class: 1  # asset
+gl_account_code: "1111"
+currency: SGD
+
+filename_patterns:
+  - "Deposit Account Statement_.*\\.pdf"
+  - "POSB.*Savings.*\\.pdf"
+
+header_markers:
+  - "Details of Your POSBkids Account"
+  - "Details of Your Savings Account"
+  - "Details of Your Account"
+
+account_number:
+  regex: "Account No\\.\\s*:\\s*(\\d{3}-\\d{5}-\\d)"
+  # Format: 170-37376-6
+
+statement_date:
+  regex: "As at\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+balance_anchors:
+  brought_forward: "Balance Brought Forward\\s+([\\d,]+\\.\\d{2})"
+  carried_forward: "Balance Carried Forward\\s+([\\d,]+\\.\\d{2})"
+
+tx_table:
+  columns: [DATE, DETAILS_OF_TRANSACTIONS, WITHDRAWAL, DEPOSIT, BALANCE]
+  date_format: "%d %b"      # day-of-month + 3-letter month (year inferred from statement_date)
+
+# Transaction header line — matches the first line of every transaction block.
+# Captures: day, month, type, amount.
+tx_header_regex: "^(\\d{1,2})\\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+(.+?)\\s+([\\d,]+\\.\\d{2})(?:\\s+([\\d,]+\\.\\d{2}))?$"
+# group 1 = day, 2 = month, 3 = type, 4 = primary amount, 5 = optional running balance
+
+tx_types:
+  - "FAST Payment / Receipt"
+  - "Debit Card transaction"
+  - "Payments / Collections via GIRO"
+  - "Bill Payment"
+  - "Salary"
+  - "Interest Earned"
+  - "My Preferred Payment Plan from Credit Card"
+  - "Point-of-Sale Transaction"
+  - "Cash Withdrawal"
+  - "Cash Deposit"
+  - "Standing Instruction"
+  - "Funds Transfer"
+  - "Remittance Transfer of Funds"
+  - "FAST Collection"
+  - "Service Charge"
+  - "MEPS Receipt"
+  - "Advice"
+  - "Dividends/Cash Distribution"
+  - "Dividends"
+  - "Cheque Deposit"
+  - "ATM Withdrawal"
+  - "GIRO Collection"
+  - "Inward Telegraphic Transfer"
+  - "Outward Telegraphic Transfer"
+  - "GST Charge"
+  - "Refund"
+  - "Reversal"
+
+# Critical: identifier carriers — these are continuation lines BELOW the tx header
+# until the next tx header or "Balance Carried Forward".
+# Schema enumerates which line types Sentinel must preserve for downstream
+# classification, because Firefly was dropping these.
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    - kind: paynow_recipient
+      pattern: "^(To|From):\\s+(.+)$"
+      example: "To: COINBASE SINGAPORE PTE. LTD."
+    - kind: entity_name_uppercase
+      pattern: "^([A-Z][A-Z\\s&.,'\\-]+(PTE|PVT|LTD|LLP|LLC|INC|CORP|COY)\\.?)$"
+      example: "SINGAPORE LIFE LTD"
+    - kind: bank_routing
+      pattern: "^([A-Z]{4}SG\\d{2}[A-Z0-9]+)$"
+      example: "SCBLSG22BRT0074090"
+    # Long-form policy ref (policy + routing) must match BEFORE short policy ref.
+    # Pattern uses digit-count thresholds so they're mutually exclusive.
+    - kind: insurance_policy_long_ref
+      pattern: "^(P\\d{12,})$"
+      example: "P4064051170373766"
+    - kind: insurance_policy_ref
+      pattern: "^(P\\d{7,11})$"
+      example: "P4064051"
+    # AVI = Singlife policy ref keep before bank routings
+    - kind: cpf_or_govt_ref
+      pattern: "^(AVI\\d+/\\w+)$"
+      example: "AVI16172585/06869528246F"
+    # Bank routing patterns (PROMOTED up — must match before the generic numeric)
+    # Zero-padded DBS Cashline account ref. Format: ten 0s + 9-10 digit account.
+    # Example "0000000000850437364" = DBS Cashline 085-043736-4.
+    - kind: dbs_cashline_routing
+      pattern: "^0{10}(\\d{9,10})$"
+      example: "0000000000850437364"
+    - kind: ftbt_marker
+      pattern: "^FTBT$"
+    - kind: meps_remittance_ref
+      pattern: "^(REM\\d{10,})$"
+      example: "REM132606625774"
+    - kind: meps_internal_ref
+      pattern: "^(0016II\\d+)$"
+      example: "0016II2295917"
+    - kind: maybank_routing_msl
+      pattern: "^MSL:(\\d{11}):I-BANK$"
+      example: "MSL:14030791138:I-BANK"
+    - kind: dbs_card_routing
+      pattern: "^DBSC-(\\d{16})\\s*:\\s*I-BANK$"
+      example: "DBSC-4119110104972424 : I-BANK"
+    - kind: ccc_card_routing
+      pattern: "^CCC - (\\d{16}) : I-BANK$"
+      example: "CCC - 4835850017835159 : I-BANK"
+    - kind: sc_routing
+      pattern: "^SCL:(\\d+):I-BANK$"
+      example: "SCL:99190816851:I-BANK"
+    - kind: gxs_routing
+      pattern: "^GXS:(\\d+):I-BANK$"
+      example: "GXS:80017040595:I-BANK"
+    # Generic catch-all — long opaque numeric ids
+    - kind: long_numeric_ref
+      pattern: "^(\\d{14,})$"
+      example: "17722648046098086242"
+    - kind: card_number
+      pattern: "^(\\d{4}-\\d{4}-\\d{4}-\\d{4})$"
+      example: "5264-7110-0546-4435"
+    - kind: txn_ref
+      pattern: "^(\\d{20,})$"
+      example: "20240102SCBLSG22BRT0074090"
+    - kind: descriptor_other
+      pattern: "^(Other|PayNow Transfer|Fund Transfer|Transfer)$"
+    - kind: merchant_descriptor
+      pattern: "^([A-Z][A-Z0-9\\* ]+ (?:SI|SG|HK|US|GB|HRV)\\s*\\w*\\s*\\d{2}[A-Z]{3})$"
+      example: "GRAB* GPC-0c7bcfb1fa61 Si SGP 10FEB"
+
+# Note: Firefly's PDF importer was dropping the recipient/policy_ref/bank_routing
+# continuation lines, mapping every tx to "Payments / Collections via GIRO - Unknown"
+# and parking $7,080+ of Singlife Savvy Invest premiums in 5190 General Expense.
+# This schema explicitly preserves them.
+
+skip_pages_matching:
+  - "PDS_POSBPCMTHE"  # footer-only pages
+  - "this Statement of Account will"
+
+footer_patterns:
+  - "PDS_POSBPCMTHE_E_LOC_FP_\\w+"

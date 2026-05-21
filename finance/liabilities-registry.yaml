@@ -1,0 +1,496 @@
+# Sentinel Finance — Liabilities Registry
+#
+# Single source of truth for every credit-facility installment plan and revolving
+# credit minimum payment. Used by:
+#
+#   • cashflow_digest.py        → projects C (next month) + D (subsequent months)
+#   • sync_registry_to_bills.py → one Firefly Bill per account, amount = sum of
+#                                 active plan monthlies; auto-extends end date
+#                                 to longest-running plan
+#   • parse_installment_plans.py (Phase 1, weekend build) → ingests statement
+#                                 PDFs monthly and updates this file in place
+#
+# Bootstrap source: Apr'26 statements + user's master spreadsheet (12 May 2026).
+# Subsequent updates should be driven by Phase-1 parser; manual edits are fine
+# but flag with `source: manual` so the parser doesn't clobber them.
+
+meta:
+  owner: your@email.com
+  base_currency: SGD
+  last_bootstrapped: 2026-05-12
+  total_outstanding: 51971.16     # sum of all account current_outstanding (sanity check)
+  monthly_obligation: 2460.64     # C = sum of next-month installments (cashflow projection)
+
+accounts:
+
+  # ── Banks ───────────────────────────────────────────────────────────────
+  - id: dbs-cashline
+    firefly_acct_id: 100
+    name: "DBS Cashline (085-043736-4)"
+    account_number: "085-043736-4"
+    type: revolving
+    billing_day: 5
+    credit_limit: 3100.00
+    available: 197.15
+    current_outstanding: 2902.85
+    notes: "0% promo until 16-Mar-2027; min payment 2.5% or $50"
+    plans:
+      - id: cashline-rolling-min
+        plan_code: "Cashline 0% promo"
+        kind: revolving_min
+        monthly: 73.15
+        remaining_months: 10
+        source: manual
+
+  - id: dbs-cc-4119
+    firefly_acct_id: 103
+    name: "DBS CC (4119-1101-0497-2424)"
+    account_number: "4119-1101-0497-2424"
+    type: credit_card
+    billing_day: 8
+    credit_limit: 9100.00
+    available: 1081.57
+    current_outstanding: 8018.43
+    plans:
+      - id: dbs-cc-007
+        plan_code: "007 MY PREFERRED PAYMENT PLAN24"
+        kind: instalment
+        principal: 223.21
+        monthly: 9.30
+        original_months: 24
+        remaining_months: 2
+        outstanding: 18.61
+        source: "Apr'26 statement"
+      - id: dbs-cc-012
+        plan_code: "012 MY PREF PMT PLN - DEP TXN24"
+        kind: instalment
+        principal: 1829.32
+        monthly: 76.22
+        original_months: 24
+        remaining_months: 22
+        outstanding: 1676.88
+        source: "Apr'26 statement"
+      - id: dbs-cc-013
+        plan_code: "013 MY PREF PMT PLN - DEP TXN24"
+        kind: instalment
+        principal: 1500.00
+        monthly: 62.50
+        original_months: 24
+        remaining_months: 22
+        outstanding: 1375.00
+        source: "Apr'26 statement"
+      - id: dbs-cc-014
+        plan_code: "014 MY PREF PMT PLN - DEP TXN24"
+        kind: instalment
+        principal: 1500.00
+        monthly: 62.50
+        original_months: 24
+        remaining_months: 22
+        outstanding: 1375.00
+        source: "Apr'26 statement"
+      - id: dbs-cc-015
+        plan_code: "015 MY PREF PMT PLN - DEP TXN24"
+        kind: instalment
+        principal: 1000.00
+        monthly: 41.66
+        original_months: 24
+        remaining_months: 22
+        outstanding: 916.68
+        source: "Apr'26 statement"
+      - id: dbs-cc-003il
+        plan_code: "003IL (60M) 2.68%PA+1%PF"
+        kind: instalment
+        principal: 4000.00
+        monthly: 75.60
+        original_months: 60
+        remaining_months: 38
+        outstanding: 2872.80          # gross future payment stream
+        interest_rate_annual: 2.68    # flat-rate convention (SG bank instalment plans)
+        interest_method: flat
+        processing_fee_pct: 1.0
+        source: "Apr'26 statement"
+
+  - id: hsbc-cc
+    firefly_acct_id: 121
+    name: "HSBC Credit Card"
+    account_number: "4835-XXXX-XXXX-5159"
+    type: credit_card
+    billing_day: 3
+    credit_limit: 9100.00
+    available: 6829.02
+    current_outstanding: 2270.98
+    notes: "HSBC VISA REVOLUTION. Apr'26 stmt 2390.98; paid 120 on 29-Apr → 2270.98"
+    plans:
+      - id: hsbc-revolving-min
+        plan_code: "HSBC revolving min"
+        kind: revolving_min
+        monthly: 68.13     # ~3% of outstanding
+        remaining_months: 12
+        source: manual
+
+  - id: maybank-cc
+    firefly_acct_id: 106
+    name: "Maybank CC (4966-4309-0492-7004)"
+    account_number: "4966-4309-0492-7004"
+    type: credit_card
+    billing_day: 14
+    credit_limit: 7000.00
+    available: 697.72
+    current_outstanding: 6302.28
+    plans:
+      - id: maybank-flexicash-60
+        plan_code: "FLEXICASH 60 MTHS"
+        kind: instalment
+        monthly: 106.97
+        original_months: 60
+        remaining_months: 59
+        outstanding: 6302.28
+        source: "Apr'26 statement (Platinum Visa PDF)"
+
+  # ── Maybank CreditAble group ─────────────────────────────────────────────
+  # 3 sub-accounts share one $7,000 limit (owner clarified 2026-05-13).
+  # Primary (limit-bearer): maybank-creditable-3837 — active term loan.
+  # Secondary (linked, $0 balances now): -8901-263 (paid off Apr) + -3866-643.
+
+  - id: maybank-creditable-3837
+    firefly_acct_id: 129     # was previously mis-mapped to 8901-263; correct here
+    name: "Maybank CreditAble Term Loan (0413-3837-707)"
+    account_number: "0413-3837-707"
+    type: term_loan
+    billing_day: 4
+    # Lender entity (confirmed from Apr'26 statement)
+    lender_name: "Maybank Singapore — CreditAble"
+    # Loan terms — extracted from Apr'26 statement OCR 2026-05-13:
+    # "Term Loan Instalment (1/60) 105.00" + "Term Loan Instalment Int 15.12"
+    # Daily-accrual rate (revolving OD portion): 22.90% PA
+    # Flat rate (term-loan portion): 2.88% PA (derived from $15.12/mo × 60 ÷ $6,300 ≈ 2.88%)
+    origination_date: 2026-04-15
+    maturity_date: 2031-04-15
+    principal_amount: 6300.00
+    disbursed_amount: 6300.00     # OD-style: no upfront admin fee deducted; $5 OD interest per cycle
+    admin_fee: 0.00
+    nominal_monthly_pct: 2.88     # FLAT rate per annum
+    interest_basis: flat
+    num_instalments: 60
+    instalment_amount: 120.12     # $105 principal + $15.12 interest (statement breakdown)
+    credit_limit: 7000.00
+    available: 805.00
+    current_outstanding: 6195.00
+    notes: "Active 60M term loan started 15-Apr-2026. Holds the $7k CreditAble limit shared with -8901-263 + -3866-643. Statement: $105 P + $15.12 I = $120.12/mo. As of 13-May-2026: 1 instalment paid."
+    plans:
+      - id: maybank-creditable-3837-60
+        plan_code: "Term Loan Instalment 1/60"
+        kind: instalment
+        principal: 6300.00
+        monthly: 120.12             # full monthly (P+I)
+        original_months: 60
+        remaining_months: 59
+        outstanding: 6195.00         # principal-only after 1 paid
+        interest_rate_annual: 2.88
+        interest_method: flat
+        source: "Apr'26 statement (Maybank CA), OCR'd 2026-05-13"
+
+  - id: maybank-creditable-8901
+    firefly_acct_id: null     # Firefly account TBD — was incorrectly assigned to 129 before
+    name: "Maybank CreditAble (0413-8901-263)"
+    account_number: "0413-8901-263"
+    type: term_loan
+    billing_day: 4
+    current_outstanding: 0.00
+    status: paid_off
+    shared_limit_with: maybank-creditable-3837
+    notes: "Paid off Apr 2026. Was -$3,622.56 on 15-Jan-2026 per Jan'26 statement."
+
+  - id: maybank-creditable-3866
+    firefly_acct_id: null
+    name: "Maybank CreditAble (0413-3866-643)"
+    account_number: "0413-3866-643"
+    type: term_loan
+    billing_day: 4
+    current_outstanding: 0.00
+    status: active
+    shared_limit_with: maybank-creditable-3837
+    notes: "Inactive sub-account, $0 balance per owner spreadsheet 2026-05-13."
+
+  - id: sc-cc-5498
+    firefly_acct_id: 112
+    name: "Standard Chartered CC (5498-3416-4500-8810)"
+    account_number: "5498-3416-4500-8810"
+    type: credit_card
+    billing_day: 7
+    credit_limit: 14600.00
+    available: 3940.00
+    current_outstanding: 9878.42
+    plans:
+      - id: sc-ezbal-36-21
+        plan_code: "EZBAL-EASYPAY 36 @ #21"
+        kind: instalment
+        principal: 2414.02
+        monthly: 75.10
+        original_months: 36
+        remaining_months: 15
+        outstanding: 1072.00
+        source: "Apr'26 statement"
+      - id: sc-ezbal-60-19
+        plan_code: "EZBAL-EASYPAY 60 @ #19"
+        kind: instalment
+        principal: 3000.00
+        monthly: 72.00
+        original_months: 60
+        remaining_months: 41
+        outstanding: 2284.23
+        source: "Apr'26 statement"
+      - id: sc-ezbal-60-02
+        plan_code: "EZBAL-EASYPAY 60 @ #02"
+        kind: instalment
+        principal: 3362.59
+        monthly: 80.70
+        original_months: 60
+        remaining_months: 58
+        outstanding: 3287.01
+        source: "Apr'26 statement"
+      - id: sc-ezbal-60-17
+        plan_code: "EZBAL-EASYPAY 60 @ #17"
+        kind: instalment
+        principal: 1507.00
+        monthly: 36.17
+        original_months: 60
+        remaining_months: 43
+        outstanding: 1189.45
+        source: "Apr'26 statement"
+      - id: sc-ezbal-60-15
+        plan_code: "EZBAL-EASYPAY 60 @ #15"
+        kind: instalment
+        principal: 2499.00
+        monthly: 59.98
+        original_months: 60
+        remaining_months: 45
+        outstanding: 2040.50
+        source: "Apr'26 statement"
+
+  - id: sc-loan-bt
+    firefly_acct_id: 115
+    name: "SC Loan/BT (9702-2221-0463-6461)"
+    account_number: "9702-2221-0463-6461"
+    type: balance_transfer
+    billing_day: 7
+    current_outstanding: 781.58
+    # Shares the $14,600 limit with SC CC 5498 (one SC credit relationship,
+    # two product accounts). Reconciler walks this link.
+    shared_limit_with: sc-cc-5498
+    plans:
+      - id: sc-bt-24-15
+        plan_code: "EZBAL-EASYPAY 24 @ #15"
+        kind: instalment
+        principal: 1862.00
+        monthly: 93.88
+        original_months: 24
+        remaining_months: 9
+        outstanding: 781.58
+        source: "Apr'26 statement"
+
+  - id: uob-cashplus
+    firefly_acct_id: 118
+    name: "UOB CashPlus (465-349-508-5)"
+    account_number: "465-349-508-5"
+    type: line_of_credit
+    billing_day: 9
+    credit_limit: 6100.00
+    available: 2813.04
+    current_outstanding: 3286.96
+    plans:
+      - id: uob-loan-27-60
+        plan_code: "UOB PERSONAL LOAN INSTL 27/60"
+        kind: instalment
+        monthly: 59.70
+        original_months: 60
+        remaining_months: 33
+        source: "Apr'26 statement"
+      - id: uob-loan-19-36
+        plan_code: "UOB PERSONAL LOAN INSTL 19/36"
+        kind: instalment
+        monthly: 93.95
+        original_months: 36
+        remaining_months: 17
+        source: "Apr'26 statement"
+
+  - id: gxs-flexiloan
+    firefly_acct_id: 132
+    name: "GXS FlexiLoan (800-170405-95)"
+    account_number: "800-170405-95"
+    type: digital_loan
+    billing_day: 31
+    credit_limit: 6000.00
+    available: 1455.03
+    current_outstanding: 4544.97
+    notes: "GXS Bank FlexiLoan. Interest 4.50% p.a. (8.41% EIR). Combined next due 31-May-2026: $176.41"
+    plans:
+      - id: gxs-emergency-24
+        plan_code: "Emergency Loan 15/24"
+        kind: instalment
+        monthly: 54.56       # 491.02 / 9 remaining
+        original_months: 24
+        remaining_months: 9
+        outstanding: 491.02
+        source: "GXS app screenshot 12-May-2026"
+      - id: gxs-emergency-60
+        plan_code: "Emergency Loan 27/60"
+        kind: instalment
+        monthly: 122.85      # 4053.95 / 33 remaining (rough)
+        original_months: 60
+        remaining_months: 33
+        outstanding: 4053.95
+        source: "GXS app screenshot 12-May-2026"
+
+  # ── Moneylenders ─────────────────────────────────────────────────────────
+  - id: ez-loan
+    firefly_acct_id: 122
+    name: "EZ Loan (EL-14603)"
+    account_number: "EL-14603"
+    type: moneylender_loan
+    billing_day: 7
+    current_outstanding: 3989.69
+    # NEW: lender entity (v1.9.21 schema)
+    lender_name: "EZ LOAN PTE LTD"
+    lender_license: "24/2025"
+    lender_address: "Block 3 Beach Road #01-4853 Singapore 190003"
+    lender_contact: "62222529"
+    # NEW: loan terms
+    origination_date: 2026-01-07
+    maturity_date: 2027-01-07
+    principal_amount: 5000.00
+    disbursed_amount: 4500.00
+    admin_fee: 500.00
+    nominal_monthly_pct: 2.88
+    interest_basis: reducing_balance
+    num_instalments: 12
+    instalment_amount: 498.72
+    status: active
+    agreement_document_path: "CC_Statement/Moneylender Loans/EL-14603 - LOAN AGREEMENT.pdf"
+    notes: "Principal 5000 (disbursed 4500 after 500 admin fee). 2.88% per month. Final 07-Jan-2027"
+    plans:
+      - id: ez-loan-schedule
+        plan_code: "EZ Loan #4 of 12"
+        kind: instalment
+        principal: 5000.00
+        monthly: 498.72
+        original_months: 12
+        remaining_months: 8
+        outstanding: 3989.69
+        source: "Loan agreement schedule PDF"
+    # NEW: full P/I schedule (computed reducing-balance, 2.88%/mo, $498.72 fixed)
+    # If the actual agreement schedule diverges, override individual rows below.
+    schedule:
+      - {n:  1, due_date: 2026-02-07, amount: 498.72, principal: 354.72, interest: 144.00}
+      - {n:  2, due_date: 2026-03-07, amount: 498.72, principal: 364.94, interest: 133.78}
+      - {n:  3, due_date: 2026-04-07, amount: 498.72, principal: 375.45, interest: 123.27}
+      - {n:  4, due_date: 2026-05-07, amount: 498.72, principal: 386.26, interest: 112.46}
+      - {n:  5, due_date: 2026-06-07, amount: 498.72, principal: 397.38, interest: 101.34}
+      - {n:  6, due_date: 2026-07-07, amount: 498.72, principal: 408.83, interest:  89.89}
+      - {n:  7, due_date: 2026-08-07, amount: 498.72, principal: 420.60, interest:  78.12}
+      - {n:  8, due_date: 2026-09-07, amount: 498.72, principal: 432.72, interest:  66.00}
+      - {n:  9, due_date: 2026-10-07, amount: 498.72, principal: 445.18, interest:  53.54}
+      - {n: 10, due_date: 2026-11-07, amount: 498.72, principal: 458.00, interest:  40.72}
+      - {n: 11, due_date: 2026-12-07, amount: 498.72, principal: 471.19, interest:  27.53}
+      - {n: 12, due_date: 2027-01-07, amount: 498.69, principal: 484.73, interest:  13.96}
+
+  - id: lending-bee
+    firefly_acct_id: 123
+    name: "Lending Bee"
+    account_number: ""
+    type: moneylender_loan
+    billing_day: 28
+    current_outstanding: 4321.17  # post instalment 2 paid
+    # NEW: lender entity
+    lender_name: "LENDING BEE"
+    # NEW: loan terms (verbal input from owner 2026-05-13)
+    origination_date: 2026-02-28
+    maturity_date: 2027-02-28
+    principal_amount: 5000.00
+    disbursed_amount: 4500.00
+    admin_fee: 500.00
+    nominal_monthly_pct: 4.00
+    interest_basis: reducing_balance
+    num_instalments: 12
+    instalment_amount: 532.76
+    status: active
+    notes: "Disbursed SGD 4500 on 28-Feb-2026; SGD 532.76/mo via eGIRO. 1st installment 28-Mar-2026."
+    plans:
+      - id: lending-bee-schedule
+        plan_code: "Lending Bee monthly eGIRO"
+        kind: instalment
+        principal: 5000.00
+        monthly: 532.76
+        original_months: 12
+        remaining_months: 10
+        outstanding: 4321.17
+        source: "Verbal terms 2026-05-13"
+    # NEW: full P/I schedule (computed 4%/mo reducing balance, $532.76 fixed)
+    schedule:
+      - {n:  1, due_date: 2026-03-28, amount: 532.76, principal: 332.76, interest: 200.00}
+      - {n:  2, due_date: 2026-04-28, amount: 532.76, principal: 346.07, interest: 186.69}
+      - {n:  3, due_date: 2026-05-28, amount: 532.76, principal: 359.91, interest: 172.85}
+      - {n:  4, due_date: 2026-06-28, amount: 532.76, principal: 374.31, interest: 158.45}
+      - {n:  5, due_date: 2026-07-28, amount: 532.76, principal: 389.28, interest: 143.48}
+      - {n:  6, due_date: 2026-08-28, amount: 532.76, principal: 404.85, interest: 127.91}
+      - {n:  7, due_date: 2026-09-28, amount: 532.76, principal: 421.05, interest: 111.71}
+      - {n:  8, due_date: 2026-10-28, amount: 532.76, principal: 437.89, interest:  94.87}
+      - {n:  9, due_date: 2026-11-28, amount: 532.76, principal: 455.40, interest:  77.36}
+      - {n: 10, due_date: 2026-12-28, amount: 532.76, principal: 473.62, interest:  59.14}
+      - {n: 11, due_date: 2027-01-28, amount: 532.76, principal: 492.57, interest:  40.19}
+      - {n: 12, due_date: 2027-02-28, amount: 532.78, principal: 512.29, interest:  20.49}
+
+  # NEW (v1.9.21): Sands Credit added — paid off 30-Apr-2026
+  - id: sands-credit
+    firefly_acct_id: null   # to be created on next Firefly sync
+    name: "Sands Credit (16125/2025)"
+    account_number: "16125/2025"
+    type: moneylender_loan
+    billing_day: 30
+    current_outstanding: 0.00
+    # Lender entity
+    lender_name: "SANDS CREDIT PTE LTD"
+    lender_uen: "201015313M"
+    lender_license: "126/2024"
+    lender_address: "Block 513 Bishan Street 13 #01-514 Singapore 570513"
+    lender_contact: "62250268"
+    # Loan terms (extracted from loan agreement OCR 2026-05-13)
+    origination_date: 2025-04-17
+    maturity_date: 2026-04-30
+    principal_amount: 5000.00
+    disbursed_amount: 4500.00
+    admin_fee: 500.00
+    nominal_monthly_pct: 3.92
+    interest_basis: reducing_balance
+    late_fee: 60.00
+    statement_fee: 10.00
+    num_instalments: 12
+    instalment_amount: 530.19
+    status: paid_off
+    agreement_document_path: "CC_Statement/Moneylender Loans/16125 - LOAN AGREEMENT.pdf"
+    notes: "Personal-Others unsecured loan. Total cost SGD 6362.24 = 5000 P + 1362.24 I. Fully paid 30-Apr-2026."
+    # Plans (for cashflow_digest compat; effectively all paid now)
+    plans:
+      - id: sands-schedule
+        plan_code: "Sands Credit 12 of 12 (PAID OFF)"
+        kind: instalment
+        principal: 5000.00
+        monthly: 530.19
+        original_months: 12
+        remaining_months: 0
+        outstanding: 0.00
+        source: "Loan agreement OCR 2026-05-13"
+    # Full P/I schedule from agreement page 2 (exact values from PDF)
+    schedule:
+      - {n:  1, due_date: 2025-05-30, amount: 530.19, principal: 334.36, interest: 195.83}
+      - {n:  2, due_date: 2025-06-30, amount: 530.19, principal: 347.45, interest: 182.74}
+      - {n:  3, due_date: 2025-07-30, amount: 530.19, principal: 361.06, interest: 169.13}
+      - {n:  4, due_date: 2025-08-30, amount: 530.19, principal: 375.20, interest: 154.99}
+      - {n:  5, due_date: 2025-09-30, amount: 530.19, principal: 389.90, interest: 140.29}
+      - {n:  6, due_date: 2025-10-30, amount: 530.19, principal: 405.17, interest: 125.02}
+      - {n:  7, due_date: 2025-11-30, amount: 530.19, principal: 421.04, interest: 109.15}
+      - {n:  8, due_date: 2025-12-30, amount: 530.19, principal: 437.53, interest:  92.66}
+      - {n:  9, due_date: 2026-01-30, amount: 530.19, principal: 454.67, interest:  75.52}
+      - {n: 10, due_date: 2026-02-28, amount: 530.19, principal: 472.47, interest:  57.72}
+      - {n: 11, due_date: 2026-03-30, amount: 530.19, principal: 490.98, interest:  39.21}
+      - {n: 12, due_date: 2026-04-30, amount: 530.15, principal: 510.17, interest:  19.98}

@@ -1,0 +1,483 @@
+# Account Directory — single source of truth for all identifiers → CoA mappings.
+#
+# Authored 2026-05-14 to eliminate the scatter-bug that had `sc-creditable.yaml`
+# claiming gl_account_code=2113 while the actual CoA had 2113=SC CC and the
+# classifier was routing MEPS Receipts to 2113 (wrong) instead of 2213 (Maybank
+# CreditAble).
+#
+# CONSUMED BY:
+#   - app.account_router.route(tx) — single resolver used by every parser path
+#   - statement schemas (informational, NOT authoritative for gl_account_code)
+#   - chart_of_accounts (one-way: this directory MUST reflect what's actually
+#     postable in the GL; if a code here is not postable, validation flags it)
+#
+# Update rule: when a new bank/card/loan is opened or closed, edit THIS file
+# and ONLY this file. The classifier reloads at container start.
+#
+# Each entry has:
+#   coa: <postable leaf code>           # required
+#   name: <human label>                 # required, for narration
+#   class: asset | liability | income | expense
+#   identifiers:                        # any of these → this CoA
+#     account_number: ...               # for savings/loans (POSB, Maybank, etc.)
+#     card_number: ...                  # for CCs (16-digit; multiple formats normalised)
+#     policy_number: ...                # for insurance/ILP
+#     recipient_pattern: ...            # exact substring in paynow_recipient (uppercase)
+#     tx_type_marker: ...               # exact tx_type match (e.g. "MEPS Receipt")
+#     instalment_amount: ...            # exact amount-pinpoint (for fixed monthly bills)
+#     routing_pattern: ...              # bank-specific routing line content
+#
+# Routing precedence (in account_router):
+#   1. policy_number (most specific)
+#   2. card_number / dbs_card_routing / ccc_card_routing
+#   3. account_number / msl_routing / cashline_routing / sc_routing / gxs_routing
+#   4. recipient_pattern
+#   5. instalment_amount (only when tx_type matches expected pattern)
+#   6. tx_type_marker (fallback for documents without specific identifiers)
+
+version: 1
+generated: 2026-05-14
+owner: Azfar Hakim Bin Abdul Rahman
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ASSETS — accounts I own
+# ─────────────────────────────────────────────────────────────────────────────
+assets:
+  bank_accounts:
+    - coa: "1111"
+      name: "POSB Savings"
+      class: asset
+      identifiers:
+        account_number: "170-37376-6"
+        bare_account_number: "170373766"
+    - coa: "1112"
+      name: "Cash Wallet"
+      class: asset
+    - coa: "1113"
+      name: "Wise Multi-Currency"
+      class: asset
+      identifiers:
+        recipient_pattern: "WISE"
+        routing_pattern: "Wise:"
+    - coa: "1114"
+      name: "Maybank Ar Rihla"
+      class: asset
+      identifiers:
+        account_number: "14030791138"
+        msl_routing: "MSL:14030791138:I-BANK"
+        # Maybank-statement masked-account suffix (last 4 of acct number)
+        masked_account_last4: "1138"
+    - coa: "1115"
+      name: "Standard Chartered SuperSalary"
+      class: asset
+      identifiers:
+        account_number: "01-1-783334-7"
+        # SC sometimes uses zero-padded variants
+        scl_routing: "SCL:99190816851:I-BANK"  # SC Balance Transfer routing (not savings)
+
+  cpf:
+    - coa: "1211"
+      name: "CPF Ordinary Account"
+      class: asset
+      identifiers:
+        cpf_account_number: "S9528246F"
+        sub_account: "OA"
+    - coa: "1212"
+      name: "CPF Special Account"
+      class: asset
+      identifiers:
+        sub_account: "SA"
+    - coa: "1213"
+      name: "CPF MediSave"
+      class: asset
+      identifiers:
+        sub_account: "MA"
+    - coa: "1214"
+      name: "CPF Retirement Account"
+      class: asset
+      identifiers:
+        sub_account: "RA"
+
+  ilp:
+    - coa: "12229"
+      name: "Singlife Savvy Invest — Unallocated"
+      class: asset
+      identifiers:
+        policy_number: "P4064051"
+        policy_long_ref: "P4064051170373766"
+        premium_amount: 252.85   # exact pinpoint
+    - coa: "12221"
+      name: "Allianz Inc & Growth AMH2 SGD (Singlife)"
+      class: asset
+      # populated by Singlife monthly statement parser only
+    - coa: "12222"
+      name: "BGF World Healthsci A2 SGD-H (Singlife)"
+      class: asset
+    - coa: "12223"
+      name: "Infinity US 500 SGD (Singlife)"
+      class: asset
+    - coa: "12219"
+      name: "Tokio Marine ILP — Unallocated"
+      class: asset
+
+  crypto:
+    - coa: "1231"
+      name: "Crypto Wallets (multi-chain)"
+      class: asset
+      identifiers:
+        recipient_pattern: "COINBASE SINGAPORE"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LIABILITIES — credit lines + loans
+# ─────────────────────────────────────────────────────────────────────────────
+liabilities:
+  credit_cards:
+    - coa: "2111"
+      name: "DBS Live Fresh Visa"
+      class: liability
+      identifiers:
+        card_number: "4119-1101-0497-2424"
+        bare_card: "4119110104972424"
+        dbsc_routing: "DBSC-4119110104972424"
+        ccc_routing_prefix: "4119"
+    - coa: "2112"
+      name: "Maybank Platinum Visa"
+      class: liability
+      identifiers:
+        card_number: "4966-4309-0492-7004"
+        bare_card: "4966430904927004"
+        ccc_routing_prefix: "4966"
+        masked_account_last4: "7004"   # Maybank statement uses last 4 of card
+    - coa: "2113"
+      name: "Standard Chartered Cashback Mastercard"
+      class: liability
+      identifiers:
+        card_number: "5498-3416-4500-8810"
+        bare_card: "5498341645008810"
+        ccc_routing_prefix: "5498"
+    - coa: "2114"
+      name: "HSBC Visa Revolution"
+      class: liability
+      identifiers:
+        card_number: "4835-8500-1783-5159"
+        bare_card: "4835850017835159"
+        ccc_routing_prefix: "4835"
+
+  bnpl:
+    - coa: "2115"
+      name: "Atome BNPL"
+      class: liability
+      identifiers:
+        recipient_pattern: "ATOME"
+        # APAYLATER (ShopeePayLater) also commonly maps to BNPL; user can split
+        # off as 2116 later if needed
+        recipient_pattern_2: "APAYLATER"
+
+  lines_of_credit:
+    - coa: "2121"
+      name: "DBS Cashline"
+      class: liability
+      identifiers:
+        account_number: "085-043736-4"
+        cashline_padded: "0000000000850437364"
+        cashline_bare: "850437364"
+        # Cashline drawdowns into POSB show as tx_type=Advice + FTBT marker
+        tx_type_marker_drawdown: "Advice"
+    - coa: "2122"
+      name: "UOB CashPlus"
+      class: liability
+      identifiers:
+        account_number: "465-349-508-5"
+        bare_account: "4653495085"
+
+  term_loans:
+    - coa: "2211"
+      name: "Standard Chartered Balance Transfer"
+      class: liability
+      identifiers:
+        routing_pattern_scbl: "SCBLSG22BRT"
+        # Disbursement marker on POSB: tx ref starts with SCBLSG22BRT
+    - coa: "2212"
+      name: "GXS FlexiLoan"
+      class: liability
+      identifiers:
+        account_number: "800-170405-95"
+        bare_account: "80017040595"
+        gxs_routing: "GXS:80017040595:I-BANK"
+    - coa: "2213"
+      name: "Maybank CreditAble"
+      class: liability
+      identifiers:
+        account_number: "04133837707"
+        masked_account_last4: "7707"   # Maybank statement uses last 4 of acct
+        # Drawdowns into POSB Savings show as tx_type=MEPS Receipt
+        # with REM<digits> + 0016II<digits> on continuation lines.
+        tx_type_marker_drawdown: "MEPS Receipt"
+        meps_routing_marker: "REM"
+
+  moneylenders:
+    # Repaid via PayNow with "To: <NAME>" carrier; identified by recipient_pattern
+    # OR by exact instalment_amount when recipient stripped.
+    - coa: "2221"
+      name: "EZ Loan Pte Ltd"
+      class: liability
+      identifiers:
+        recipient_pattern: "EZ LOAN"
+        instalment_amount: 498.72
+    - coa: "2222"
+      name: "Lending Bee"
+      class: liability
+      identifiers:
+        recipient_pattern: "LENDING BEE"
+        instalment_amount: 532.76
+    - coa: "2223"
+      name: "Sands Credit"
+      class: liability
+      identifiers:
+        recipient_pattern: "SANDS CREDIT"
+        instalment_amount: 530.19
+
+  tax:
+    - coa: "2310"
+      name: "Income Tax Payable (IRAS)"
+      class: liability
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INCOME — recurring sources
+# ─────────────────────────────────────────────────────────────────────────────
+income:
+  - coa: "4110"
+    name: "Salary — AZ United Pte Ltd"
+    class: income
+    identifiers:
+      tx_marker: "AZ UNITED"
+      employer_uen: "200143"  # employee_id matches; payslip schema
+  - coa: "4120"
+    name: "Salary — YourAgency Security Services"
+    class: income
+    identifiers:
+      tx_marker: "HENDERSON"
+  - coa: "4130"
+    name: "Salary — SAF Imprest reimbursement"
+    class: income
+    identifiers:
+      tx_marker: "SAF IMPREST"
+  - coa: "4210"
+    name: "Dividends & cash distributions"
+    class: income
+    identifiers:
+      tx_type_marker: "Dividends/Cash Distribution"
+      tx_type_marker_2: "Dividends"
+  - coa: "4220"
+    name: "Bank interest earned"
+    class: income
+    identifiers:
+      tx_type_marker: "Interest Earned"
+  - coa: "4300"
+    name: "Government transfers (EDUSAVE / PSEA / etc.)"
+    class: income
+    identifiers:
+      recipient_pattern: "EDUSAVE"
+      recipient_pattern_2: "PSEA"
+  - coa: "4900"
+    name: "Other income / under-review inflows"
+    class: income
+    # catch-all for FAST inflows we can't identify
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPENSE — vendor → category rules
+# ─────────────────────────────────────────────────────────────────────────────
+expense:
+  insurance_premiums:
+    coa: "5340"
+    patterns:
+      - "SINGAPORE LIFE LTD"   # pure-insurance Singlife products (Health Plus, Cancer Cover, Whole Life, etc.)
+      - "TOKIO MARINE"
+      - "AIA SINGAPORE"
+      - "PRUDENTIAL"
+      - "NTUC INCOME"
+      - "INCOME INSUR"
+    # Note: Savvy Invest (policy P4064051) is an ASSET (12229), not expense.
+    # The policy_number identifier in assets.ilp wins precedence.
+
+  food_and_beverage:
+    coa: "5110"
+    patterns:
+      - "ENAK ENAK"
+      - "PETER F AND B"
+      - "CHEERS"
+      - "7-ELEVEN"
+      - "TUCKSHOP"
+      - "KOPITIAM"
+      - "KOUFU"
+      - "BELACAN"
+      - "MAKAN"
+      - "EATING HOUSE"
+      - "FOOD HALL"
+      - "TONG AIK"
+      - "BREAD TALK"
+      - "QASHIER-"   # Qashier is a POS provider; merchant name follows
+      - "STARBUCKS"
+      - "COFFEE BEAN"
+      - "TOAST BOX"
+      - "YA KUN"
+      - "OLD CHANG KEE"
+      - "MCDONALD"
+      - "KFC"
+      - "BURGER KING"
+      - "SUBWAY"
+
+  food_delivery:
+    coa: "5111"
+    patterns:
+      - "FOODPANDA"
+      - "FP*FOOD"
+      - "GRABFOOD"
+      - "DELIVEROO"
+
+  groceries:
+    coa: "5120"
+    patterns:
+      - "FAIRPRICE"
+      - "NTUC"
+      - "COLD STORAGE"
+      - "GIANT"
+      - "SHENGSIONG"
+      - "SHENG SIONG"
+
+  transport:
+    coa: "5131"
+    patterns:
+      - "GRAB*"
+      - "GRAB GPC"
+      - "GO-JEK"
+      - "GOJEK"
+      - "TADA"
+      - "RYDE"
+      - "EASYVAN"
+      - "SBS TRANSIT"
+      - "SMRT"
+      - "EZ-LINK"
+      - "EZLINK"
+
+  fuel:
+    coa: "5132"
+    patterns:
+      - "SHELL"
+      - "ESSO"
+      - "CALTEX"
+      - "SPC PETROL"
+      - "SINOPEC"
+
+  internet_mobile:
+    coa: "5141"
+    patterns:
+      - "VIEWQWEST"
+      - "SINGTEL"
+      - "STARHUB"
+      - "M1 "
+      - "MYREPUBLIC"
+      - "SIMBA TELECOM"
+      - "CIRCLES.LIFE"
+      - "WHIZCOMMS"
+
+  electricity:
+    coa: "5143"
+    patterns:
+      - "SP SERVICES"
+      - "SP GROUP"
+      - "SP UTILITIES"
+      - "TUAS POWER"
+      - "GENECO"
+      - "SENOKO ENERGY"
+      - "UNION POWER"
+
+  healthcare:
+    coa: "5150"
+    patterns:
+      - "INTEMEDICAL"
+      - "CLINIC"
+      - "HOSPITAL"
+      - "GUARDIAN"
+      - "WATSONS"
+      - "UNITY PHARMACY"
+      - "POLYCLINIC"
+
+  shopping_shopee:
+    coa: "5160"
+    patterns:
+      - "SHOPEE"
+      - "SHOPEEPAY"
+  shopping_lazada:
+    coa: "5161"
+    patterns:
+      - "LAZADA"
+  shopping_other_online:
+    coa: "5161"
+    patterns:
+      - "AMAZON"
+      - "EBAY"
+      - "ALIEXPRESS"
+      - "TEMU"
+      - "SHEIN"
+
+  family_transfers:
+    coa: "5170"
+    patterns:
+      # Named family members the user transfers to via PayNow
+      - "KALSUM"
+      - "SHAHROM"
+      - "UMIYATUN"
+      - "AISYAH"
+      - "CHEAH HSIAN LING"
+      - "PEK LEE PENG"
+      - "ABDUL SALAM ABDULLAH"
+      - "DESMONDLIM"
+      - "RAMIYAA"
+    # Generic personal-name (single first-name only) PayNow also routes here
+    generic_personal_name_pattern: "^[A-Z][a-z]+$"
+
+  subscriptions:
+    coa: "5200"
+    patterns:
+      - "ANTHROPIC"
+      - "CLAUDE.AI"
+      - "MICROSOFT"
+      - "TWITCH"
+      - "GOOGLE*YOUTUBE"
+      - "GOOGLE ONE"
+      - "NETFLIX"
+      - "SPOTIFY"
+      - "DOCKER"
+      - "GITHUB"
+      - "OPENAI"
+      - "CURSOR"
+      - "FIGMA"
+      - "NOTION"
+
+  government_fees:
+    coa: "5500"
+    patterns:
+      - "AXS PTE"
+      - "IRAS"
+      - "INLAND REVENUE"
+      - "ICA "
+      - "IMMIGRATION"
+
+  bank_fees:
+    coa: "5700"
+    patterns:
+      - "NET*CREDIT BUREAU"
+      - "NET*PL CR"
+      - "SERVICE CHARGE"
+      - "GIRO RETURNED"
+      - "MONTHLY FEE"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SUSPENSE — explicit fallback
+# ─────────────────────────────────────────────────────────────────────────────
+suspense:
+  coa: "1190"
+  name: "Suspense Account"
+  # Anything that fails to match here lands in 1190.
+  # The damage report enumerates these for follow-up.

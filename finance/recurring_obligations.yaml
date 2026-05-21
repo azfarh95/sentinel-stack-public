@@ -1,0 +1,236 @@
+# Sentinel Finance — Recurring obligations registry seed
+# -------------------------------------------------------
+# Hand-curated list of known recurring outflows. The recurring_reconciler reads
+# this YAML on startup and upserts each row into recurring_obligation_registry.
+# Add a new obligation here when source-doc workflows aren't built yet (insurance
+# policy parser, subscription receipt parser etc.).
+#
+# Fields:
+#   name                : display label (unique)
+#   kind                : insurance | ilp | subscription | utility | loan | tax | charity | other
+#   contra_coa          : CoA leaf to debit when the outflow matches
+#   expected_amount     : SGD
+#   amount_tolerance    : SGD ± deviation allowed before drift_alert
+#   frequency           : monthly | yearly | weekly | adhoc
+#   expected_day_of_month : 1-31 (for monthly), NULL otherwise
+#   grace_days          : tx may land within ± grace days of expected_day
+#   identifier_patterns : list of substring/regex (case-insensitive) — match against
+#                         narration or tx_type
+#   counterparty_hint   : display name
+#   journal_kind        : expense | transfer | loan_pay | ilp_premium
+#   notes               : free text
+
+obligations:
+  # ── Insurance (P&L expense) ──────────────────────────────────────────────
+  - name: Singlife Term Life
+    kind: insurance
+    contra_coa: "5310"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 1.00
+    frequency: monthly
+    identifier_patterns:
+      - "SINGAPORE LIFE"
+      - "Singlife"
+    counterparty_hint: Singapore Life Ltd
+    journal_kind: expense
+
+  - name: Tokio Marine
+    kind: insurance
+    contra_coa: "5340"
+    expected_amount: 418.45   # confirmed by user 2026-05-14 (was $252.85 placeholder)
+    amount_tolerance: 5.00
+    frequency: monthly
+    identifier_patterns:
+      - "TOKIO MARINE"
+    counterparty_hint: Tokio Marine Life Insurance
+    journal_kind: expense
+
+  - name: Singlife (small recurring)
+    kind: insurance
+    contra_coa: "5310"
+    expected_amount: 3.05    # user-identified 2026-05-14 (28 occurrences Jan'24-Apr'26)
+    amount_tolerance: 0.10
+    frequency: monthly
+    identifier_patterns:
+      - "SINGAPORE LIFE"
+      - "Singlife"
+    counterparty_hint: Singlife (small policy — needs CoA review)
+    journal_kind: expense
+    notes: "Small Singlife recurring $3.05/mo; confirm policy type to refine CoA"
+
+  - name: Singlife (variant, discontinued Jul'25)
+    kind: insurance
+    contra_coa: "5310"
+    expected_amount: 59.70
+    amount_tolerance: 0.50
+    frequency: monthly
+    active_to: 2025-07-31     # 14 occurrences Jun'24-Jul'25 then stopped
+    identifier_patterns:
+      - "SINGAPORE LIFE"
+      - "Singlife"
+    counterparty_hint: Singlife (discontinued policy)
+    journal_kind: expense
+    notes: "Stopped Jul'25 — possibly upgraded/replaced"
+
+  - name: AIA
+    kind: insurance
+    contra_coa: "5330"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 5.00
+    frequency: monthly
+    identifier_patterns:
+      - "AIA SINGAPORE"
+      - "AIA Co"
+    counterparty_hint: AIA Singapore
+    journal_kind: expense
+
+  # ── ILP (asset move, NOT expense) ───────────────────────────────────────
+  - name: Singlife Savvy Invest (ILP)
+    kind: ilp
+    contra_coa: "12229"
+    expected_amount: 252.85
+    amount_tolerance: 0.50
+    frequency: monthly
+    identifier_patterns:
+      - "P4064051"
+      - "SINGAPORE LIFE.*252.85"
+    counterparty_hint: Singlife Savvy Invest (Policy P4064051)
+    journal_kind: ilp_premium
+    notes: "ILP premium — builds NAV in 12229, not P&L expense"
+
+  # ── Subscriptions ───────────────────────────────────────────────────────
+  - name: ChatGPT Plus
+    kind: subscription
+    contra_coa: "5200"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 3.00
+    frequency: monthly
+    identifier_patterns:
+      - "OPENAI"
+      - "ChatGPT"
+    counterparty_hint: OpenAI
+    journal_kind: expense
+
+  - name: Anthropic Claude
+    kind: subscription
+    contra_coa: "5200"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 3.00
+    frequency: monthly
+    identifier_patterns:
+      - "ANTHROPIC"
+      - "Claude"
+    counterparty_hint: Anthropic
+    journal_kind: expense
+
+  - name: Apple iCloud
+    kind: subscription
+    contra_coa: "5200"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 0.50
+    frequency: monthly
+    identifier_patterns:
+      - "APPLE.COM/BILL"
+      - "Apple Services"
+    counterparty_hint: Apple
+    journal_kind: expense
+
+  - name: Google One
+    kind: subscription
+    contra_coa: "5200"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 0.50
+    frequency: monthly
+    identifier_patterns:
+      - "GOOGLE"
+      - "GOOGLE *YOUTUBE"
+    counterparty_hint: Google
+    journal_kind: expense
+
+  # ── Utilities ───────────────────────────────────────────────────────────
+  - name: SP Group (electricity)
+    kind: utility
+    contra_coa: "5143"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 30.00
+    frequency: monthly
+    identifier_patterns:
+      - "SP GROUP"
+      - "SP SERVICES"
+    counterparty_hint: SP Group
+    journal_kind: expense
+
+  - name: Singtel Mobile
+    kind: utility
+    contra_coa: "5142"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 10.00
+    frequency: monthly
+    identifier_patterns:
+      - "SINGTEL"
+    counterparty_hint: Singtel
+    journal_kind: expense
+
+  # ── Term loan instalments / cashlines ──────────────────────────────────
+  - name: EZ Loan instalment
+    kind: loan
+    contra_coa: "2221"
+    expected_amount: 498.72
+    amount_tolerance: 1.00
+    frequency: monthly
+    identifier_patterns:
+      - "EZ LOAN"
+    counterparty_hint: EZ Loan Pte Ltd
+    journal_kind: loan_pay
+
+  - name: Lending Bee instalment
+    kind: loan
+    contra_coa: "2222"
+    expected_amount: 0       # placeholder — inactive until user confirms
+    amount_tolerance: 5.00
+    frequency: monthly
+    identifier_patterns:
+      - "LENDING BEE"
+    counterparty_hint: Lending Bee
+    journal_kind: loan_pay
+
+  - name: Sands Credit instalment
+    kind: loan
+    contra_coa: "2223"
+    expected_amount: 530.19
+    amount_tolerance: 1.00
+    frequency: monthly
+    identifier_patterns:
+      - "SANDS CREDIT"
+    counterparty_hint: Sands Credit
+    journal_kind: loan_pay
+
+  - name: UOB CashPlus repayment (current)
+    kind: loan
+    contra_coa: "2122"           # UOB CashPlus liability — verify code
+    expected_amount: 153.65       # user-confirmed 2026-05-14 (8 occurrences Aug'25-Apr'26)
+    amount_tolerance: 1.00
+    frequency: monthly
+    active_from: 2025-08-01
+    identifier_patterns:
+      - "UOB"
+      - "UNITED OVERSEAS BANK"
+    counterparty_hint: UOB CashPlus
+    journal_kind: loan_pay
+
+  - name: UOB CashPlus repayment (prior)
+    kind: loan
+    contra_coa: "2122"
+    expected_amount: 93.95        # 8 occurrences Nov'24-Jul'25, then replaced by 153.65
+    amount_tolerance: 1.00
+    frequency: monthly
+    active_to: 2025-07-31
+    identifier_patterns:
+      - "UOB"
+      - "UNITED OVERSEAS BANK"
+    counterparty_hint: UOB CashPlus (prior payment amount)
+    journal_kind: loan_pay
+    notes: "Superseded Aug'25 by 153.65 — possibly loan balance change"
+
+# Skipped per user 2026-05-14: $500 × 3 (Jun-Aug 2024) internal transfer between
+# own banks — legacy data, balances reconciled by 2026. Not worth registering.

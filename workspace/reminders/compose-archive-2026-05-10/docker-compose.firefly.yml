@@ -1,0 +1,66 @@
+services:
+  firefly:
+    image: fireflyiii/core:latest
+    container_name: firefly
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - firefly_upload:/var/www/html/storage/upload
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_KEY: "base64:8JchMGtul6+LRLR3+sL63lUC0jgAGsEvXh7vBFZ782Y="
+      DB_CONNECTION: pgsql
+      DB_HOST: firefly-db
+      DB_PORT: 5432
+      DB_DATABASE: firefly
+      DB_USERNAME: firefly
+      DB_PASSWORD: firefly_pass
+      TRUSTED_PROXIES: "**"
+      APP_URL: "http://localhost:8080"
+      DEFAULT_LANGUAGE: "en_US"
+      DEFAULT_LOCALE: "equal"
+      TZ: "Asia/Kuala_Lumpur"
+      MAIL_MAILER: "null"
+      SEND_REGISTRATION_MAIL: "false"
+      SEND_ERROR_MESSAGE: "false"
+      SITE_OWNER: "your@email.com"
+    depends_on:
+      firefly-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - firefly-net
+
+  firefly-db:
+    image: postgres:16-alpine
+    container_name: firefly-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: firefly
+      POSTGRES_USER: firefly
+      POSTGRES_PASSWORD: firefly_pass
+    volumes:
+      - firefly_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firefly -d firefly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - firefly-net
+
+networks:
+  firefly-net:
+    driver: bridge
+
+volumes:
+  firefly_upload:
+  firefly_db:

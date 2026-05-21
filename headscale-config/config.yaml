@@ -1,0 +1,77 @@
+# Headscale config — Phase 1 (loopback only, pre-domain)
+# Phase 2 will add: real server_url with HTTPS, TLS via reverse proxy,
+# OIDC if you want it. For now: HTTP on 127.0.0.1, suitable for local-only use.
+
+# ── Identity ───────────────────────────────────────────────────────────────
+# server_url is what clients use to reach the coordination server.
+# Phase 2 (2026-05-10): public HTTPS via Cloudflare Tunnel ingress at
+# headscale.your-domain.example.com -> http://127.0.0.1:8099 on the host.
+# CF terminates TLS; cloudflared service forwards plain HTTP to the container.
+server_url: https://headscale.your-domain.example.com
+
+# Address Headscale binds to (matches docker-compose port mapping).
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+# Used to generate per-node URLs (e.g. node1.tail.your-domain.example.com).
+# Must NOT collide with hostnames you serve elsewhere — using `tail` subdomain
+# under your existing root domain so it lives in the same DNS zone.
+base_domain: tail.your-domain.example.com
+
+# Tailnet IP ranges — fixed defaults that match Tailscale's reserved space.
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# DERP (relay) — disable embedded; we don't need it for local-only Phase 1.
+# Tailscale's public DERP relays are still usable as fallback.
+derp:
+  server:
+    enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: true
+  update_frequency: 24h
+
+# ── Storage ────────────────────────────────────────────────────────────────
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+
+# Pre-shared key + private key file paths (auto-generated on first run).
+private_key_path: /var/lib/headscale/private.key
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+# ── DNS ────────────────────────────────────────────────────────────────────
+dns:
+  override_local_dns: false
+  magic_dns: true
+  base_domain: tail.your-domain.example.com
+  # Upstream resolvers used by clients while connected to the tailnet.
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 9.9.9.9
+  search_domains: []
+
+# ── ACL policy ─────────────────────────────────────────────────────────────
+# Path inside container; we mount headscale-config -> /etc/headscale.
+policy:
+  mode: file
+  path: /etc/headscale/acl.json
+
+# ── Misc ───────────────────────────────────────────────────────────────────
+ephemeral_node_inactivity_timeout: 30m
+node_update_check_interval: 10s
+
+# Disable the legacy CLI/API gRPC channel — only use unix socket on disk.
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+# Default log level — bump to debug while shaking out Phase 1 issues.
+log:
+  format: text
+  level: info

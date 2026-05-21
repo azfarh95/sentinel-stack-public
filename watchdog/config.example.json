@@ -1,0 +1,23 @@
+{
+  "owner_chat_id": 123456789,
+  "wsl_distro": "Ubuntu-24.04",
+  "openclaw_service": "openclaw-gateway.service",
+  "compose_dir": "C:\\Users\\yourname\\metamcp-local",
+  "compose_files": [
+    "docker-compose.local.yml"
+  ],
+  "openclaw_config": "\\\\wsl.localhost\\Ubuntu-24.04\\home\\yourname\\.openclaw\\openclaw.json",
+  "alert_interval_seconds": 1800,
+  "auto_restart": true,
+  "digest_enabled": true,
+  "digest_time": "08:00",
+  "lm_studio_api_key": null,
+  "dns_watch": ["yourdomain.xyz"],
+  "github_repo": "youruser/your-repo",
+  "github_pat": "ghp_YOUR_PERSONAL_ACCESS_TOKEN",
+  "github_sync_interval": 300,
+  "lm_studio_exe": null,
+  "infer_bridge": null,
+  "sentinel_bridge": null,
+  "mini_app_url": "https://t.me/YourBotUsername/dashboard"
+}

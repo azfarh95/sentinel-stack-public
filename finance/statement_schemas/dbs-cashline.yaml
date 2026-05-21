@@ -1,0 +1,59 @@
+# DBS Cashline statement schema
+bank: DBS
+product: DBS Cashline (revolving credit)
+account_class: 2  # liability
+gl_account_code: "2121"
+currency: SGD
+
+filename_patterns:
+  - "DBS CL.*\\.pdf"
+  - "Cashline Statement.*\\.pdf"
+
+header_markers:
+  - "Cashline"
+  - "Statement of Account"
+  - "CASHLINE ACCOUNT NO"
+
+account_number:
+  regex: "(\\d{3}-\\d{6}-\\d)\\s"
+  example: "085-043736-4"
+
+statement_date:
+  regex: "STATEMENT PRINTED ON.*?\\n.*?(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+credit_limit:
+  regex: "S\\$([\\d,]+\\.\\d{2})\\s+S\\$[\\d,]+\\.\\d{2}\\s+S\\$[\\d,]+\\.\\d{2}"
+  # first amount in the summary row
+
+balance_anchors:
+  previous: "PREVIOUS BALANCE\\s+([\\d,]+\\.\\d{2})"
+  sub_total: "SUB-TOTAL\\s+([\\d,]+\\.\\d{2})"
+  closing: "CLOSING BALANCE\\s+([\\d,]+\\.\\d{2})"
+
+tx_table:
+  columns: [DATE, TRANSACTION_ACTIVITY, AMOUNT]
+  date_format: "%d %b %Y"   # full year written out
+  amount_sign:
+    suffix_CR: credit       # PAYMENT - DBS INTERNET/WIRELESS X.XX CR = repayment
+    default: debit          # otherwise drawdown
+
+tx_header_regex: "^(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})\\s*(CR)?$"
+
+# Cashline has very few tx types — drawdowns and repayments
+tx_types:
+  - "PAYMENT - DBS INTERNET/WIRELESS"
+  - "FUNDS TRANSFER"
+  - "CASH WITHDRAWAL"
+  - "INTEREST"
+  - "ANNUAL FEE"
+  - "LATE PAYMENT FEE"
+
+# Critical: Sentinel learned that "CLOSING BALANCE" was being misread as a charge.
+# Parser must EXCLUDE anchor lines from tx parsing.
+exclude_lines:
+  - "^CLOSING BALANCE\\b"
+  - "^PREVIOUS BALANCE\\b"
+  - "^SUB-TOTAL\\b"
+  - "^MINIMUM PAYMENT DUE\\b"
+  - "^DATE\\s+TRANSACTION ACTIVITY"

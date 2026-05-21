@@ -1,0 +1,60 @@
+# AZ United Pte Ltd monthly payslip schema
+employer: AZ United Pte Ltd
+type: monthly_payslip
+gl_account_code: "4110"   # AZ United salary income
+currency: SGD
+
+filename_patterns:
+  - "AZ United.*Payslip.*\\.pdf"
+  - "AZFAR HAKIM.*PaySlip.*\\.pdf"
+
+header_markers:
+  - "AZ United Pte Ltd"
+  - "PAYSLIP"
+
+employee_name_regex: "Employee Name\\s*:\\s*(.+)$"
+employee_id_regex: "Employee Id\\s*:\\s*(\\d+)"
+designation_regex: "Designation\\s*:\\s*(.+)$"
+nric_regex: "NRIC No\\.\\s*:\\s*(X+\\d+[A-Z])"
+bank_account_regex: "Bank Account No\\s*:\\s*(\\d+)"
+
+payslip_period:
+  regex: "Payslip Period\\s*:\\s*(\\d{2}/\\d{2}/\\d{4})\\s+-\\s+(\\d{2}/\\d{2}/\\d{4})"
+  format: "%d/%m/%Y"
+
+payment_date:
+  regex: "Payment Date\\s*:\\s*(\\d{2}/\\d{2}/\\d{4})"
+  format: "%d/%m/%Y"
+
+mode_of_payment:
+  regex: "Mode of Payment\\s*:\\s*(.+)$"
+
+# Two-column EARNINGS / DEDUCTIONS table
+fields:
+  earnings:
+    basic_pay: "Basic Pay\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    total_earnings: "Total Earnings\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    allowance: "Allowance\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    bonus: "Bonus\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    overtime: "Overtime\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+  deductions:
+    national_service: "National Service\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    employee_cpf: "Employee CPF\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    fund_mbmf: "Fund \\(MBMF\\)\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    fund_cdac: "Fund \\(CDAC\\)\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    fund_sinda: "Fund \\(SINDA\\)\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    fund_eca: "Fund \\(ECA\\)\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    total_deductions: "Total Deductions\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+  employer:
+    employer_cpf: "Employer CPF\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+    sdl: "SDL\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+  net_pay_regex: "NET PAY\\s*\\$\\s*([\\d,]+\\.\\d{2})"
+
+# Expected journal posting per payslip:
+# DR POSB (1111) [net_pay]
+# DR Employee CPF (1211 OA / 1212 SA / 1213 MA — split by fund_breakdown_yaml)
+# DR MBMF expense (5520)
+# DR National Service withholding (1124 or whichever receivable)
+# CR Salary Income — AZ United (4110) [total_earnings + employer_cpf]
+# CR Employer CPF cost (5410) [contra to salary]
+posting_template: payslip_azunited_v1

@@ -1,0 +1,482 @@
+vendors:
+- canonical: AZ United (salary)
+  match:
+  - AZ UNITED
+  - AZ U PTE
+  - SALARY AZ
+  category: Salary
+  account_type: income
+- canonical: YourAgency Security
+  match:
+  - HENDERSON SECURITY
+  - HENDERSON S
+  category: Salary (YourAgency)
+  account_type: income
+- canonical: SAF Imprest
+  match:
+  - SAF IMPREST
+  category: Reimbursement (SAF)
+  account_type: income
+- canonical: Tokio Marine ILP
+  match:
+  - TOKIO MARINE
+  category: Insurance/ILP (asset)
+  account_type: investment
+  expected_payment_account: POSB Savings
+- canonical: Singapore Life
+  match:
+  - SINGAPORE LIFE
+  - SINGLIFE
+  category: Insurance - Life
+  account_type: expense
+  expected_payment_account: POSB Savings
+- canonical: DBS Cashline
+  match:
+  - AUTO TOP UP FROM CASHLINE
+  - DBS CASHLINE
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: EZ Loan
+  match:
+  - EZ LOAN PTE.LTD.
+  - EZ LOAN
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: Lending Bee
+  match:
+  - LENDING BEE
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: GXS FlexiLoan
+  match:
+  - GXS FLEXILOAN
+  - GXS BANK
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: UOB CashPlus
+  match:
+  - UOB CASHPLUS
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: Maybank CreditAble
+  match:
+  - MAYBANK CREDITABLE
+  - MAYBANK CA
+  - MAYBANK CREDIT ABLE
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: SC Loan/BT
+  match:
+  - 'SCL:'
+  - STANDARD CHARTERED LOAN
+  - SC LOAN
+  category: Debt service
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: DBS CC
+  match:
+  - DBS CC
+  - DBS CREDIT CARD
+  category: Debt service
+  account_type: liability
+- canonical: Maybank CC
+  match:
+  - 'MSL:'
+  - MAYBANK CC
+  - MAYBANK CREDIT
+  category: Debt service
+  account_type: liability
+- canonical: HSBC CC
+  match:
+  - HSBC CC
+  - HSBC CREDIT
+  category: Debt service
+  account_type: liability
+- canonical: Standard Chartered CC
+  match:
+  - STANDARD CHARTERED CC
+  - SC CC
+  category: Debt service
+  account_type: liability
+- canonical: Atome
+  match:
+  - ATOME*
+  - ATOME SG
+  - ATOME PTE
+  category: BNPL
+  account_type: liability
+  expected_payment_account: POSB Savings
+- canonical: Wise
+  match:
+  - 'Wise:'
+  - 'WISE:'
+  - WISE PTE
+  - WISE PAYMENTS
+  category: Transfer (Wise)
+  account_type: transfer
+- canonical: Maybank Savings
+  match:
+  - 'MBB:'
+  - MAYBANK SAVINGS
+  category: Transfer (Maybank)
+  account_type: transfer
+- canonical: SC Savings
+  match:
+  - 'SCB:'
+  - STANDARD CHARTERED SAVINGS
+  category: Transfer (SC)
+  account_type: transfer
+- canonical: Anthropic
+  match:
+  - ANTHROPIC
+  - CLAUDE.AI
+  category: Subscriptions
+  account_type: expense
+- canonical: Microsoft 365
+  match:
+  - MICROSOFT*MICROSOFT 36
+  - MICROSOFT 365
+  category: Subscriptions
+  account_type: expense
+- canonical: Telegram Premium
+  match:
+  - SGL/Telegram Premium
+  - TELEGRAM PREMIUM
+  category: Subscriptions
+  account_type: expense
+- canonical: Webshare
+  match:
+  - WEBSHARE
+  category: Subscriptions
+  account_type: expense
+- canonical: Viewqwest
+  match:
+  - Viewqwest
+  - VIEWQWEST
+  category: Utilities - Internet
+  account_type: expense
+- canonical: RM Food
+  match:
+  - RM FOOD MANUFACTURING
+  category: F&B
+  account_type: expense
+- canonical: AtlasVending
+  match:
+  - ATLASVENDING
+  - ATLAS VENDING
+  category: F&B
+  account_type: expense
+- canonical: 7-Eleven
+  match:
+  - 7-ELEVEN
+  category: F&B
+  account_type: expense
+- canonical: Shopee
+  match:
+  - SHOPEE SINGAPORE
+  category: Shopping
+  account_type: expense
+- canonical: Grab
+  match:
+  - Grab*
+  - GRABPAY
+  category: Transport
+  account_type: expense
+- canonical: NETS QR
+  match:
+  - NETS QR PAYMENT
+  category: F&B
+  account_type: expense
+- canonical: PayNow
+  match:
+  - PayNow Transfer
+  - PAYNOW
+  category: Personal transfer
+  account_type: expense
+- canonical: POS (Point-of-Sale)
+  match:
+  - Point-of-Sale Transaction
+  - 'POS-'
+  - POS PURCHASE
+  - POINT OF SALE
+  category: Shopping
+  account_type: expense
+- canonical: Bill Payment (unspecified)
+  match:
+  - Bill Payment - Unknown
+  - Bill Payment Unknown
+  category: Debt service
+  account_type: liability
+  notes: "Generic PDF-import bucket — most are CC monthly settlements. Re-import via iBanking CSV to recover vendor."
+- canonical: Debit Card (unspecified)
+  match:
+  - Debit Card transaction - Unknown
+  - Debit Card transaction Unknown
+  category: General Expense
+  account_type: expense
+  notes: "Generic PDF-import bucket — debit card spend with vendor lost. Tap tx in Pending Reconciliation to auto-generate a vendor card."
+- canonical: FAST Payment (unspecified)
+  match:
+  - FAST Payment / Receipt - Unknown
+  - FAST Collection
+  category: Personal transfer
+  account_type: expense
+- canonical: Portfolio sync (snapshot delta)
+  match:
+  - Portfolio sync
+  - snapshot delta
+  category: Portfolio adjustment
+  account_type: investment
+  notes: "Synthetic tx from portfolio_mcp daily NW snapshot to keep Firefly balance aligned with on-chain reality. Not a real cash movement."
+- canonical: SC interbank transfer
+  match:
+  - SCBLSG22
+  - 'RTL-DDKABGQZ'
+  category: Transfer (SC)
+  account_type: transfer
+- canonical: Bank rounding adjustment
+  match:
+  - Bank rounding adjustment
+  - rounding adjustment
+  category: Interest income
+  account_type: income
+- canonical: POSB Advice
+  match:
+  - Advice
+  category: Personal transfer
+  account_type: expense
+- canonical: Interest Earned
+  match:
+  - Interest Earned
+  - INTEREST EARNED
+  category: Interest income
+  account_type: income
+- canonical: Dividend / Cash Distribution
+  match:
+  - Dividends/Cash Distribution
+  - DIVIDENDS/CASH DISTRIBUTION
+  - DIVIDEND
+  category: Dividend income
+  account_type: income
+  notes: "Residual dividends from CDP-held stocks. Tag with 'cdp' for traceability."
+- canonical: Coinbase
+  match:
+  - COINBASE
+  - CBASGD
+  category: Crypto purchase
+  account_type: investment
+- canonical: Ozon
+  match:
+  - OZON - EVOCA
+  - OZON
+  category: Shopping (online)
+  account_type: expense
+- canonical: MRCR Mobile
+  match:
+  - MRCR Mobile Pay
+  category: Transport
+  account_type: expense
+- canonical: Foodpanda
+  match:
+  - FOODPANDA
+  - FOOD PANDA
+  - FP*
+  category: F&B (delivery)
+  account_type: expense
+- canonical: Deliveroo
+  match:
+  - DELIVEROO
+  category: F&B (delivery)
+  account_type: expense
+- canonical: GrabFood
+  match:
+  - GRABFOOD
+  - Grab* Food
+  category: F&B (delivery)
+  account_type: expense
+- canonical: FairPrice / NTUC
+  match:
+  - FAIRPRICE
+  - NTUC FAIRPRICE
+  - FAIR PRICE
+  - NTUC FP
+  category: Groceries
+  account_type: expense
+- canonical: Cold Storage
+  match:
+  - COLD STORAGE
+  category: Groceries
+  account_type: expense
+- canonical: Sheng Siong
+  match:
+  - SHENG SIONG
+  - SHENGSIONG
+  category: Groceries
+  account_type: expense
+- canonical: Giant
+  match:
+  - GIANT SUPERMARKET
+  - GIANT HYPERMARKET
+  category: Groceries
+  account_type: expense
+- canonical: Starbucks
+  match:
+  - STARBUCKS
+  category: F&B
+  account_type: expense
+- canonical: Coffee Bean
+  match:
+  - COFFEE BEAN
+  - TCB SG
+  category: F&B
+  account_type: expense
+- canonical: McDonald's
+  match:
+  - MCDONALD
+  - MCD*
+  category: F&B
+  account_type: expense
+- canonical: KFC
+  match:
+  - KFC SINGAPORE
+  - KFC SG
+  category: F&B
+  account_type: expense
+- canonical: Subway
+  match:
+  - SUBWAY
+  category: F&B
+  account_type: expense
+- canonical: ComfortDelGro Taxi
+  match:
+  - COMFORT TAXI
+  - COMFORTDELGRO
+  - CDGTAXI
+  category: Transport
+  account_type: expense
+- canonical: Gojek
+  match:
+  - GOJEK
+  category: Transport
+  account_type: expense
+- canonical: TADA
+  match:
+  - TADA SG
+  - TADA SINGAPORE
+  category: Transport
+  account_type: expense
+- canonical: EZ-Link / SimplyGo
+  match:
+  - EZ-LINK
+  - EZLINK
+  - SIMPLYGO
+  - SIMPLY GO
+  - TRANSITLINK
+  category: Transport (Public)
+  account_type: expense
+- canonical: Shell
+  match:
+  - 'SHELL '
+  category: Transport (Fuel)
+  account_type: expense
+- canonical: Esso
+  match:
+  - ESSO SINGAPORE
+  - ESSOMOBIL
+  category: Transport (Fuel)
+  account_type: expense
+- canonical: SP Group
+  match:
+  - SP GROUP
+  - SP SERVICES
+  category: Utilities - Electricity
+  account_type: expense
+- canonical: Lazada
+  match:
+  - LAZADA
+  category: Shopping (online)
+  account_type: expense
+- canonical: Amazon
+  match:
+  - AMAZON.COM
+  - AMAZON SG
+  - AMZ*
+  category: Shopping (online)
+  account_type: expense
+- canonical: Apple
+  match:
+  - APPLE.COM/BILL
+  - APPLE STORE SG
+  category: Subscriptions
+  account_type: expense
+- canonical: Google
+  match:
+  - GOOGLE *
+  - GOOGLE PAY
+  category: Subscriptions
+  account_type: expense
+- canonical: Singpass / ICA
+  match:
+  - ICA SINGAPORE
+  - IMMIGRATION CHK
+  category: Government fees
+  account_type: expense
+- canonical: IRAS
+  match:
+  - IRAS
+  - INLAND REVENUE
+  category: Tax
+  account_type: expense
+- canonical: Polyclinic / SingHealth
+  match:
+  - SINGHEALTH
+  - POLYCLINIC
+  - NUHS
+  category: Healthcare
+  account_type: expense
+- canonical: Guardian Pharmacy
+  match:
+  - GUARDIAN HEALTH
+  - GUARDIAN PHARM
+  category: Healthcare
+  account_type: expense
+- canonical: Watsons
+  match:
+  - WATSONS
+  category: Healthcare
+  account_type: expense
+- canonical: Singtel
+  match:
+  - SINGTEL
+  category: Utilities - Mobile
+  account_type: expense
+- canonical: StarHub
+  match:
+  - STARHUB
+  category: Utilities - Mobile
+  account_type: expense
+- canonical: M1
+  match:
+  - M1 LIMITED
+  - M1 PTE
+  category: Utilities - Mobile
+  account_type: expense
+- canonical: DBS Bank Fees
+  match:
+  - DBS BANK FEE
+  - POSB BANK FEE
+  - FALL BELOW FEE
+  category: Bank fees
+  account_type: expense
+- canonical: GIC / Interest
+  match:
+  - INTEREST EARNED
+  - INTEREST RECEIVED
+  category: Interest income
+  account_type: income

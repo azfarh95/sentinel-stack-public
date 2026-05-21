@@ -1,0 +1,31 @@
+{
+  "_comment_intent": "Phase 1 ACL — owner only. No outsiders. No friend tunnel. Friend access lives in a separate AmneziaWG stack (Phase 3).",
+
+  "groups": {
+    "group:owner": ["azfar@"]
+  },
+
+  "tagOwners": {
+    "tag:home-server": ["group:owner"],
+    "tag:owner-device": ["group:owner"]
+  },
+
+  "acls": [
+    {
+      "_comment": "Owner devices can reach the home server on any port",
+      "action": "accept",
+      "src":    ["group:owner"],
+      "dst":    ["tag:home-server:*"]
+    },
+    {
+      "_comment": "Owner devices can talk to each other (e.g. phone <-> laptop)",
+      "action": "accept",
+      "src":    ["group:owner"],
+      "dst":    ["group:owner:*"]
+    }
+  ],
+
+  "ssh": [],
+
+  "_comment_default_deny": "Anything not matched above is denied. Future friend account would NOT be in group:owner, so they're rejected from home-server traffic by default."
+}

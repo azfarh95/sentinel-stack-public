@@ -1,0 +1,149 @@
+# Sentinel Finance — IAS 1 Balance Sheet (v3, ASCII-approved 2026-05-12)
+#
+# Tree-structured, alphabetical within each parent.
+# Leaf node sources:
+#   firefly_account_ids: [n, ...]                      — Firefly asset balance(s)
+#   source: portfolio_mcp_liquid_chain  + chain: <slug>
+#                                                      — Moralis tokens on one chain
+#   source: portfolio_mcp_liquid_other  + named_chains + threshold_usd
+#                                                      — Other chains with total >= threshold
+#   source: portfolio_mcp_liquid_dust   + named_chains + threshold_usd
+#                                                      — Chains with total < threshold
+#   source: portfolio_mcp_manual        + include_protocols
+#                                                      — Manual positions filtered by protocol
+#   source: todo                                       — Placeholder, renders as $0
+
+assets:
+  current:
+    - id: cash_and_bank
+      label: "Cash & Bank"
+      children:
+        - id: posb_savings
+          label: "POSB Savings"
+          gl_account_codes: ["1111"]
+        - id: wise_multi_currency
+          label: "Wise (Multi-currency)"
+          gl_account_codes: ["1113"]
+        - id: maybank_savings
+          label: "Maybank Savings"
+          gl_account_codes: ["1114"]
+        - id: sc_savings
+          label: "Standard Chartered Savings"
+          gl_account_codes: ["1115"]
+
+    - id: crypto_wallets
+      label: "Crypto Wallets"
+      children:
+        - id: coinbase_account
+          label: "Coinbase Account"
+          gl_account_codes: ["1231"]
+        - id: cryptocom_account
+          label: "Crypto.com Account"
+          gl_account_codes: ["1231"]   # shared with Coinbase (anchor-based)
+
+    - id: defi
+      label: "DeFi"
+      children:
+        - id: lending_protocols
+          label: "Lending Protocols"
+          source: portfolio_mcp_manual
+          include_protocols: []          # TODO: add lending protocol names as positions are tracked
+        - id: lp_positions
+          label: "LP Positions"
+          source: portfolio_mcp_manual
+          include_protocols: []          # TODO: add LP protocol names (Uniswap, Krystal, etc.)
+        - id: yield_aggregators
+          label: "Yield Aggregators / Vaults"
+          source: portfolio_mcp_manual
+          include_protocols: []          # TODO: add vault protocols (Beefy, Yearn, etc.)
+
+    - id: token_holdings
+      label: "Token Holdings"
+      children:
+        - id: base_chain
+          label: "Base Chain"
+          source: portfolio_mcp_liquid_chain
+          chain: base
+        - id: bnb_chain
+          label: "BNB Chain"
+          source: portfolio_mcp_liquid_chain
+          chain: bsc
+        - id: cronos_chain
+          label: "Cronos Chain"
+          source: portfolio_mcp_liquid_chain
+          chain: cronos
+        - id: other_chains_above
+          label: "Other Chains (>$50)"
+          source: portfolio_mcp_liquid_other
+          named_chains: [base, bsc, cronos]
+          threshold_usd: 50
+        - id: dust_chains
+          label: "Dust Chains (<$50)"
+          source: portfolio_mcp_liquid_dust
+          named_chains: [base, bsc, cronos]
+          threshold_usd: 50
+
+  non_current:
+    - id: cpf
+      label: "CPF"
+      children:
+        - id: cpf_is
+          label: "CPF IS"
+          gl_account_codes: ["12141","12142","12143","12144","12145","12149"]
+        - id: cpf_ma
+          label: "CPF MA"
+          gl_account_codes: ["1213"]
+        - id: cpf_oa
+          label: "CPF OA"
+          gl_account_codes: ["1211"]
+        - id: cpf_sa
+          label: "CPF SA"
+          gl_account_codes: ["1212"]
+
+    - id: ilp
+      label: "ILP"
+      children:
+        - id: singlife_savvy_invest
+          label: "Singlife Savvy Invest"
+          gl_account_codes: ["12229"]
+        - id: tokio_marine
+          label: "Tokio Marine ILP"
+          gl_account_codes: ["12211","12212","12213","12214","12215","12219"]
+
+    - id: other_cash_investments
+      label: "Other Cash Investments"
+      children:
+        - id: ifast
+          label: "iFast"
+          source: todo
+        - id: tiger_brokers
+          label: "Tiger Brokers"
+          source: todo
+
+    - id: staking_vaults
+      label: "Staking Vaults"
+      children:
+        - id: wolfswap
+          label: "Wolfswap"
+          source: portfolio_mcp_manual
+          include_protocols: ["WolfSwap"]
+
+liabilities:
+  current:
+    - id: due_30
+      label: "Due within 30 days"
+      months_start: 1
+      months_end: 1
+    - id: due_31_365
+      label: "Due within 31 to 365 days"
+      months_start: 2
+      months_end: 12
+  non_current:
+    - id: due_12_plus
+      label: "Due > 12 months"
+      months_start: 13
+      months_end: 9999
+
+usd_to_sgd: 1.27       # xe.com snapshot 2026-05-13 — see /config for source selection
+fx_source: "manual"    # one of: manual | xe.com | oanda
+fx_last_updated: "2026-05-13"

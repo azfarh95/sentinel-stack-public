@@ -1,0 +1,89 @@
+/* Sentinel Finance — global privacy blur.
+ * Blurs every currency value when body.private is set.
+ * Classes used across the Mini App: .amt, .amt-usd, .big, .v, .usd
+ */
+body.private .amt,
+body.private .amt-usd,
+body.private .big,
+body.private .v,
+body.private .usd,
+body.private .bal,
+body.private .subtotal,
+body.private .collapse-card .sub,
+body.private [data-private] {
+  filter: blur(8px);
+  transition: filter 0.18s;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body:not(.private) .amt,
+body:not(.private) .amt-usd,
+body:not(.private) .big,
+body:not(.private) .v,
+body:not(.private) .usd,
+body:not(.private) .bal,
+body:not(.private) .subtotal,
+body:not(.private) .collapse-card .sub,
+body:not(.private) [data-private] {
+  filter: none;
+  transition: filter 0.18s;
+}
+
+/* Collapsible drill cards — collapsed by default */
+details.collapse-card {
+  margin-top: 8px;
+}
+details.collapse-card > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+}
+details.collapse-card > summary::-webkit-details-marker {
+  display: none;
+}
+details.collapse-card > summary::after {
+  content: "▸";
+  position: absolute;
+  right: 14px;
+  color: rgba(255,255,255,0.4);
+  font-size: 12px;
+  transition: transform 0.15s;
+}
+details.collapse-card[open] > summary::after {
+  transform: rotate(90deg);
+}
+details.collapse-card > summary {
+  position: relative;
+  padding-right: 28px;
+}
+details.collapse-card > summary:hover {
+  background: rgba(255,255,255,0.03);
+}
+details.collapse-card[open] > summary {
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+}
+
+/* Floating privacy button for pages that don't have a header button. */
+.privacy-fab {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(28,28,30,0.85);
+  color: #f0f0f0;
+  border: 1px solid rgba(255,255,255,0.18);
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 9999;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.privacy-fab:hover { background: rgba(60,60,62,0.9); }
+.privacy-fab:active { transform: scale(0.92); }

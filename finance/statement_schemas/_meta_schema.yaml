@@ -1,0 +1,202 @@
+# Universal Meta-Schema — defines the SHAPE every per-bank/per-product schema follows.
+#
+# Every concrete schema in this directory (posb-savings.yaml, dbs-cc.yaml, …) is an
+# INSTANCE of this meta-schema. The universal_pdf_parser.py reads the meta-schema at
+# startup to know which fields are required, which are optional, and what each one
+# means — so writing a new bank schema means filling in regexes against this shape,
+# not inventing fields.
+#
+# When you add a new bank: copy `_template.yaml` (TODO) and fill it in. Validate
+# against this meta-schema via `python -m app.universal_pdf_parser --validate-schemas`.
+#
+# Concept reuse: this is JSON-Schema-like, but written in YAML for readability.
+# Every concrete schema gets validated for: required fields present, types correct,
+# carrier-kind enum matches, etc.
+
+meta_schema_version: 1
+generated: 2026-05-14
+author_intent: |
+  One meta-schema covers ALL source-document families: savings statements, credit
+  card statements, revolving credit (cashlines), payslips, ILP statements, credit
+  reports, tax notices, government letters, brokerage statements, crypto exchange
+  statements. The fields below are the UNION; any single document only fills the
+  fields relevant to its kind.
+
+# ─── Top-level fields every schema declares ──────────────────────────────────
+required_fields:
+  - kind: identity
+    fields:
+      - bank             # OR `employer` OR `issuer` — one of these is required
+      - employer
+      - issuer
+      - product          # e.g. "POSB Savings", "DBS Live Fresh", "Singlife Savvy Invest"
+    note: |
+      `bank`/`employer`/`issuer` are mutually exclusive labels for the document's
+      authoritative source. At least one must be set.
+
+  - kind: routing
+    fields:
+      - gl_account_code  # where to post the document's "primary" leg. May be null
+                         # for reference docs (credit reports, NOAs that don't post
+                         # directly). For multi-fund docs (CPF, ILP-by-fund) this
+                         # is a map.
+
+  - kind: recognition
+    fields:
+      - filename_patterns   # list of regex against PDF filename
+      - header_markers      # list of strings that must appear in page 1 text
+    note: |
+      Both are evaluated; filename gives quick dispatch, header_markers do the
+      final disambiguation when multiple schemas could match the same filename.
+
+optional_fields:
+  - kind: format
+    fields:
+      - currency           # default SGD
+      - account_class      # 1=asset, 2=liability, 3=equity, 4=income, 5=expense
+      - requires_ocr       # bool — true for image-PDFs (HSBC, MLCB)
+      - text_normalisation # e.g. "insert_space_camelcase" for Singlife
+
+  - kind: identifier_fields
+    fields:
+      - account_number     # regex+example — extracts the document subject's primary identifier
+      - card_number        # for CC statements
+      - policy_number      # for insurance/ILP statements
+      - cpf_account_number # for CPF statements
+      - tax_reference      # for IRAS NOA
+      - employee_id        # for payslips
+
+  - kind: temporal
+    fields:
+      - statement_date     # {regex, format}
+      - statement_period   # {regex, format} — for period-based docs
+      - payment_due_date   # for CC / cashline / loan / NOA
+      - payment_period     # for payslips
+      - inception_date     # for insurance policies
+
+  - kind: balance_anchors
+    fields:
+      - brought_forward    # opening balance / BF / previous balance
+      - carried_forward    # closing balance / CF / current balance
+      - opening            # alt name for brought_forward
+      - closing            # alt name for carried_forward
+      - previous           # CC: previous statement balance
+      - sub_total          # for revolving credit (post-transactions, pre-finance-charges)
+      - total              # final total
+      - grand_total        # multi-card aggregates
+      - minimum_payment    # CC + cashline
+      - credit_limit
+      - cash_limit
+      - available_credit
+      - total_due
+      - net_pay            # payslip
+      - total_premium_received   # ILP
+      - basic_death_benefit       # ILP
+      - total_net_cash_surrender_value  # ILP
+      - tax_payable        # NOA
+
+  - kind: tx_table
+    fields:
+      - columns            # list of column names in order
+      - date_format        # strftime pattern
+      - amount_sign        # how CR/DR sign convention works on this doc
+        # values: {suffix_CR: credit, default: debit}
+        # values: {suffix_OD: debit_balance, default: credit_balance}
+        # values: {trailing_dash: charge, default: contribution}
+
+  - kind: tx_header_regex
+    description: |
+      Regex that matches the FIRST line of every transaction block. Capture groups
+      typically: date_components, type, amount, optional_running_balance.
+
+  - kind: tx_types
+    fields:
+      - "list of strings"  # whitelist of allowed tx-type values — used to disambiguate
+                            # tx headers from false positives like merchant descriptors
+
+  - kind: continuation_lines
+    description: |
+      Carriers — the multi-line continuation BELOW each tx header. These are the
+      fields Firefly throws away. EVERY recipient/policy ref/bank routing code
+      should be captured by a named carrier here.
+    fields:
+      - preserve_all       # bool — keep ALL continuation lines verbatim in raw_lines
+      - known_carriers     # list of {kind, pattern, example} dicts
+
+  - kind: exclude_lines
+    description: |
+      Regex list — lines that match these are NOT parsed as tx headers even if they
+      superficially match `tx_header_regex`. e.g. anchor lines like "CLOSING BALANCE",
+      footer artefacts, page numbers.
+
+  - kind: ocr_hints
+    fields:
+      - ocr_noise_patterns # patterns to strip from OCR output before regex
+      - psm                # tesseract --psm value (6 default for blocks of text)
+
+  - kind: posting_template
+    description: |
+      Optional reference to a function in `app.journal_service` that knows how to
+      construct the correct journal lines for this doc kind. e.g.
+      `payslip_azunited_v1` → splits Net Pay, CPF, ethnic fund, etc.
+
+# ─── Carrier kinds (canonical vocabulary) ────────────────────────────────────
+# When writing a schema's known_carriers, use these kinds. Adding a new kind is
+# fine — but document it here so other schemas can reuse.
+
+carrier_kinds:
+  # Counterparty identification
+  - paynow_recipient
+  - paynow_sender
+  - entity_name_uppercase
+  - counterparty_name
+  - merchant_descriptor
+
+  # Bank/routing
+  - bank_routing
+  - card_number
+  - masked_account_last4
+  - txn_ref
+  - cpf_or_govt_ref
+
+  # Insurance / ILP
+  - insurance_policy_ref
+  - insurance_policy_long_ref
+  - fund_name
+  - sub_loan_allocation
+
+  # Time
+  - time_marker        # "04:36 PM"
+  - week_begin
+  - payment_date
+
+  # Status / descriptor
+  - descriptor_other   # "Other", "Transfer", "Fund Transfer", "PayNow Transfer"
+  - si_marker          # "SI SI" indicating standing instruction
+  - ref_type           # "OTHR Other", "OTHR Transfer"
+
+  # Instalment-specific
+  - instalment_descriptor   # "UOB PERSONAL LOAN INSTL 14/60"
+
+# ─── Validation rules ────────────────────────────────────────────────────────
+validation:
+  rules:
+    - "Every schema must declare exactly one of (bank, employer, issuer)."
+    - "If is_tx_ledger != false, then tx_header_regex MUST be set."
+    - "If requires_ocr is true, OCR pipeline (pdftoppm + tesseract) is invoked first."
+    - "Carrier kinds NOT in carrier_kinds[] are allowed but trigger a warning."
+    - "exclude_lines patterns are evaluated BEFORE tx_header_regex on each line."
+    - "balance_anchors that match a tx_header_regex line MUST be excluded via exclude_lines."
+
+# ─── Concrete-schema authoring checklist ─────────────────────────────────────
+authoring_checklist:
+  - "Open a sample PDF and identify: bank, product, account/card/policy number"
+  - "Capture the statement-date format (verify with at least 2 statements)"
+  - "Identify all balance anchor names (BF, CF, Opening, Closing, etc.)"
+  - "Write tx_header_regex against ~10 actual tx lines"
+  - "List tx_types — every kind of tx appearing in the doc"
+  - "For each tx type, examine the 2-5 lines BELOW it. Every line that carries
+     identity (recipient, policy ref, ref code) gets a known_carrier entry."
+  - "Run universal_pdf_parser --file <sample> and verify carrier capture"
+  - "Add filename_patterns + 1-2 header_markers"
+  - "Add a row to _index.yaml"

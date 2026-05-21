@@ -1,0 +1,60 @@
+# Maybank Platinum Visa CC schema
+bank: Maybank
+product: Platinum Visa Card
+account_class: 2
+gl_account_code: "2112"
+currency: SGD
+
+filename_patterns:
+  - "Platinum Visa Card.*\\.pdf"
+  - "Maybank.*Visa.*\\.pdf"
+
+header_markers:
+  - "eStatement"
+  - "Product : Platinum Visa"
+
+card_number:
+  regex: "(\\d{4}-\\d{4}-\\d{4}-\\d{4})"
+  example: "4966-4309-0492-7004"
+
+statement_date:
+  regex: "Statement Date\\s*:\\s*(\\d{2}/\\d{2}/\\d{4})"
+  format: "%d/%m/%Y"
+
+payment_due_date:
+  regex: "Due Date\\s*:\\s*(\\d{2}/\\d{2}/\\d{4})"
+  format: "%d/%m/%Y"
+
+credit_limit:
+  regex: "Credit Limit\\s*:\\s*([\\d,]+)"
+
+balance_anchors:
+  previous: "Previous Balance\\s*:\\s*([\\d,]+\\.\\d{2})"
+  new_charges: "New Charges this month\\s*:\\s*([\\d,]+\\.\\d{2})"
+  credit_this_month: "Credit this month\\s*:\\s*([\\d,]+\\.\\d{2})"
+  total_due: "Total Due\\s*:\\s*([\\d,]+\\.\\d{2})"
+  minimum_due: "Minimum Due\\s*:\\s*([\\d,]+\\.\\d{2})"
+  brought_forward: "OUTSTANDING BALANCE BROUGHT FORWARD\\s+([\\d,]+\\.\\d{2})"
+
+tx_table:
+  columns: [TRANSACTED, POSTED, DESCRIPTION_OF_TRANSACTION, TRANSACTION_AMOUNT]
+  date_format: "%d%b"      # e.g. "01APR" no space
+  amount_sign:
+    suffix_CR: credit       # "111.12CR" = payment-in
+    default: debit
+
+tx_header_regex: "^(\\d{2}[A-Z]{3})\\s+(\\d{2}[A-Z]{3})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})(CR)?$"
+# group1=transacted, 2=posted, 3=desc, 4=amount, 5=CR?
+
+tx_types:
+  - "PAYMENT - INTERNET BANKING"
+  - "FLEXICASH INSTALMENTS"
+  - "RETAIL PURCHASE"
+  - "CASH ADVANCE"
+  - "ANNUAL FEE"
+
+exclude_lines:
+  - "^TOTAL TRANSACTION AMOUNT"
+  - "^PAYMENT RECEIVED"
+  - "^TOTAL PAYMENT DUE"
+  - "^Please examine this statement"

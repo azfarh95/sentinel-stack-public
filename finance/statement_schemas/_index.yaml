@@ -1,0 +1,121 @@
+# Statement schema index — registers every bank-product schema in this directory.
+# Used by app/universal_pdf_parser.py to dispatch incoming PDFs to the right schema.
+# When adding a new bank-product format: create <name>.yaml here, then add an entry below.
+
+version: 1
+generated: 2026-05-14
+source_session: "autopilot Phase 0 — OCR + identifier-field schemas"
+
+schemas:
+  # ── Singapore banks (savings/current) ──
+  - file: posb-savings.yaml
+    bank: POSB
+    product: POSB Savings / Deposit Account
+    gl_account: "1111"
+    requires_ocr: false
+
+  - file: maybank-savings.yaml
+    bank: Maybank
+    product: Ar Rihla Regular Savings Account-i
+    gl_account: "1114"
+    requires_ocr: false
+
+  - file: sc-savings.yaml
+    bank: Standard Chartered
+    product: SuperSalary Account
+    gl_account: "1115"
+    requires_ocr: false
+
+  # ── Singapore banks (credit cards) ──
+  - file: dbs-cc.yaml
+    bank: DBS
+    product: DBS Live Fresh / Visa Platinum
+    gl_account: "2111"
+    requires_ocr: false
+
+  - file: maybank-cc.yaml
+    bank: Maybank
+    product: Platinum Visa Card
+    gl_account: "2112"
+    requires_ocr: false
+
+  - file: hsbc-cc.yaml
+    bank: HSBC
+    product: HSBC Visa Revolution
+    gl_account: "2114"
+    requires_ocr: true   # image-PDF, needs pdftoppm + tesseract
+
+  # ── Singapore banks (revolving credit / cashlines) ──
+  - file: dbs-cashline.yaml
+    bank: DBS
+    product: DBS Cashline
+    gl_account: "2121"
+    requires_ocr: false
+
+  - file: uob-cashplus.yaml
+    bank: UOB
+    product: UOB CashPlus (Personal Loan revolver)
+    gl_account: "2122"
+    requires_ocr: false
+
+  - file: sc-creditable.yaml
+    bank: Maybank   # CreditAble is actually a Maybank product
+    product: Maybank CreditAble
+    gl_account: "2113"
+    requires_ocr: false
+
+  - file: gxs-flexiloan.yaml
+    bank: GXS Bank
+    product: GXS FlexiLoan
+    gl_account: "2125"
+    requires_ocr: false
+
+  # ── Investment / ILP ──
+  - file: singlife-ilp.yaml
+    bank: Singapore Life
+    product: Singlife ILP (Investment-Linked Plan, e.g. Savvy Invest P4064051)
+    gl_account: "1222"
+    requires_ocr: false
+
+  # ── Payslips ──
+  - file: payslip-azunited.yaml
+    employer: AZ United Pte Ltd
+    product: Monthly Payslip
+    gl_account: "4110"
+    requires_ocr: false
+
+  - file: payslip-youragency.yaml
+    employer: YourAgency Security Services Pte Ltd
+    product: Weekly Daily-Rated Payslip (aggregated monthly PDF)
+    gl_account: "4120"
+    requires_ocr: false
+
+  # ── Statutory ──
+  - file: cpf-statement.yaml
+    issuer: CPF Board
+    product: CPF Transaction History
+    gl_account: "1211/1212/1213"   # multi (OA/SA/MA)
+    requires_ocr: false
+
+  - file: iras-noa.yaml
+    issuer: IRAS
+    product: Notice of Assessment
+    gl_account: "2310"
+    requires_ocr: false
+
+  # ── Credit bureau (reference, not tx ledger) ──
+  - file: cbs-credit-report.yaml
+    issuer: Credit Bureau Singapore
+    product: Enhanced Consumer Credit Report
+    gl_account: null   # snapshot, no postings
+    requires_ocr: false
+
+# TODO — schemas still to be drafted in subsequent autopilot phases:
+todo:
+  - MLCB Credit Report (image-PDF, needs OCR)
+  - Tokio Marine Wealth Pro (ILP, separate from Singlife)
+  - Singlife policy documents (Wholelife / Multipay CI / Cancer Cover Plus II / Health Plus / Mindef GTL — reference docs not tx)
+  - UOB Personal Loan standalone statement (separate from UOB CashPlus)
+  - Coinbase CSV (not PDF — separate parser path)
+  - Wise CSV / Wise statement (API-based, not PDF)
+  - Moneylender (EZ Loan, Lending Bee, Sands Credit, Atome) — these have NO statement PDFs in the OneDrive at session-cutoff; will need to capture format when first received

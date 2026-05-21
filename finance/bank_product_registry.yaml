@@ -1,0 +1,499 @@
+# Sentinel Finance — Bank & Product Universe (Singapore retail banking)
+#
+# THIS FILE: defines what banks and product lines exist in the market.
+# Sentinel may or may not have a parser for any given product — that mapping
+# lives in parser_registry.yaml.
+#
+# Coverage flow:
+#   bank_product_registry  defines  {bank → products[]}     ← what exists
+#   parser_registry        defines  parser handles (bank, product) ← what we parse
+#   bot can answer:
+#     - "What banks does Sentinel know about?" → enumerate banks here
+#     - "Does Sentinel parse OCBC credit cards?" → join parser_registry on (ocbc, cc)
+#     - "What DBS products are unsupported?" → diff dbs.products vs parser_registry.handles
+#
+# Schema per bank:
+#   slug         : stable lowercase ID (used as FK in parser_registry.handles.bank)
+#   display_name : marketing name
+#   legal_name   : registered entity name (for matching statement headers)
+#   country      : ISO-3166 alpha-2 (SG, MY, US, etc.)
+#   regulator    : MAS | SEC | etc.
+#   products     : list of product lines
+#
+# Schema per product:
+#   slug                : stable ID (used in parser_registry.handles.product)
+#   display             : marketing name
+#   type                : deposit | credit_card | line_of_credit | term_loan |
+#                         hire_purchase | mortgage | investment_link | securities |
+#                         insurance | brokerage | digital_wallet
+#   statement_formats   : [pdf, csv, ofx, xls, jpg, ...]
+#   account_number_re   : regex for the account-number format (helps classifier disambiguate)
+#   notes               : product-specific quirks
+
+banks:
+
+  # ── Local banks (DBS group, OCBC, UOB) ────────────────────────────────────
+
+  - slug: dbs
+    display_name: "DBS Bank"
+    legal_name: "DBS Bank Ltd"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: posb_savings
+        display: "POSB Savings"
+        type: deposit
+        statement_formats: [pdf, csv]
+        account_number_re: '^\d{3}-\d{5}-\d$'
+        notes: "Personal savings, mass-market sub-brand"
+      - slug: dbs_savings
+        display: "DBS Multiplier / DBS Savings Plus"
+        type: deposit
+        statement_formats: [pdf, csv]
+      - slug: dbs_current
+        display: "DBS Current Account"
+        type: deposit
+        statement_formats: [pdf, csv]
+      - slug: cc
+        display: "DBS / POSB Credit Cards"
+        type: credit_card
+        statement_formats: [pdf]
+        account_number_re: '^4\d{3}-\d{4}-\d{4}-\d{4}$'
+        notes: "Consolidated statement format — multiple cards on one PDF"
+      - slug: cashline
+        display: "DBS Cashline"
+        type: line_of_credit
+        statement_formats: [pdf]
+        account_number_re: '^\d{3}-\d{6}-\d$'
+      - slug: hire_purchase
+        display: "DBS Hire Purchase (vehicle / equipment)"
+        type: hire_purchase
+        statement_formats: [pdf]
+        notes: "Not in user corpus; common for car/motorcycle financing"
+      - slug: home_loan
+        display: "DBS Home Loan"
+        type: mortgage
+        statement_formats: [pdf]
+        notes: "Annual + monthly billing"
+      - slug: vickers
+        display: "DBS Vickers Online Trading"
+        type: brokerage
+        statement_formats: [pdf, csv]
+        notes: "Securities account; CDP-linked"
+
+  - slug: ocbc
+    display_name: "OCBC Bank"
+    legal_name: "Oversea-Chinese Banking Corporation Ltd"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: savings
+        display: "OCBC 360 / Bonus+ / Frank"
+        type: deposit
+        statement_formats: [pdf, csv]
+      - slug: cc
+        display: "OCBC Credit Cards"
+        type: credit_card
+        statement_formats: [pdf]
+        account_number_re: '^(?:4\d{15}|5\d{15})$'
+      - slug: extracash
+        display: "OCBC ExtraCash (line of credit)"
+        type: line_of_credit
+        statement_formats: [pdf]
+      - slug: home_loan
+        display: "OCBC Home Loan"
+        type: mortgage
+        statement_formats: [pdf]
+      - slug: bcip
+        display: "OCBC Blue Chip Investment Plan"
+        type: investment_link
+        statement_formats: [pdf]
+        notes: "Regular savings into SGX blue-chips"
+
+  - slug: uob
+    display_name: "UOB"
+    legal_name: "United Overseas Bank Ltd"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: savings
+        display: "UOB One / Stash / Privilege"
+        type: deposit
+        statement_formats: [pdf, csv]
+      - slug: cc
+        display: "UOB Credit Cards"
+        type: credit_card
+        statement_formats: [pdf]
+      - slug: cashplus
+        display: "UOB CashPlus Personal Loan"
+        type: line_of_credit
+        statement_formats: [pdf]
+        account_number_re: '^\d{3}-\d{3}-\d{3}-\d$'
+        notes: "Combined revolving + instalment loan"
+      - slug: home_loan
+        display: "UOB Home Loan"
+        type: mortgage
+        statement_formats: [pdf]
+
+  # ── Foreign banks operating in SG retail ─────────────────────────────────
+
+  - slug: maybank
+    display_name: "Maybank Singapore"
+    legal_name: "Malayan Banking Berhad — Singapore Branch"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: ar_rihla
+        display: "Ar Rihla Regular Savings (Islamic, passthrough)"
+        type: deposit
+        statement_formats: [pdf]
+        account_number_re: '^\d{11,12}$'
+        notes: "Maybank's Shariah-compliant savings product; passes through Singapore-DIS protection"
+      - slug: cc
+        display: "Maybank Credit Cards (Platinum Visa)"
+        type: credit_card
+        statement_formats: [pdf]
+        account_number_re: '^4\d{15}$'
+      - slug: creditable
+        display: "Maybank CreditAble (term loan + OD)"
+        type: term_loan
+        statement_formats: [pdf]
+        account_number_re: '^\d{4}-\d{4}-\d{3}$'
+        notes: "Hybrid: term loan instalments + revolving overdraft on shared limit"
+      - slug: home_loan
+        display: "Maybank Home Loan"
+        type: mortgage
+        statement_formats: [pdf]
+
+  - slug: hsbc
+    display_name: "HSBC Singapore"
+    legal_name: "The Hongkong and Shanghai Banking Corporation Limited"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: everyday_global
+        display: "HSBC Everyday Global Account (multi-currency)"
+        type: deposit
+        statement_formats: [pdf]
+      - slug: cc
+        display: "HSBC Credit Cards (Visa Revolution / Premier)"
+        type: credit_card
+        statement_formats: [pdf]
+        account_number_re: '^4835-\w{4}-\w{4}-\d{4}$'
+        notes: "PDFs are image-only — requires OCR"
+      - slug: personal_loan
+        display: "HSBC Personal Instalment Loan"
+        type: term_loan
+        statement_formats: [pdf]
+
+  - slug: sc
+    display_name: "Standard Chartered Singapore"
+    legal_name: "Standard Chartered Bank (Singapore) Limited"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: savings
+        display: "SC Bonus$aver / e$aver / Current Savings"
+        type: deposit
+        statement_formats: [pdf]
+      - slug: cc
+        display: "SC Credit Cards (SimplyCash / Smart / Rewards+)"
+        type: credit_card
+        statement_formats: [pdf]
+        account_number_re: '^5498-\d{4}-\d{4}-\d{4}$'
+      - slug: balance_transfer
+        display: "SC Balance Transfer (BT)"
+        type: term_loan
+        statement_formats: [pdf]
+        account_number_re: '^9702-\d{4}-\d{4}-\d{4}$'
+        notes: "Combined with CC statement under one PDF"
+      - slug: home_loan
+        display: "SC Home Loan"
+        type: mortgage
+        statement_formats: [pdf]
+      - slug: cashone
+        display: "SC CashOne (personal loan)"
+        type: term_loan
+        statement_formats: [pdf]
+
+  - slug: citi
+    display_name: "Citibank Singapore"
+    legal_name: "Citibank Singapore Limited"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: savings
+        display: "Citi Plus / Interest Plus"
+        type: deposit
+        statement_formats: [pdf, csv]
+        notes: "Sold to UOB consumer banking 2024; legacy accounts under transition"
+      - slug: cc
+        display: "Citi Credit Cards"
+        type: credit_card
+        statement_formats: [pdf]
+      - slug: ready_credit
+        display: "Citi Ready Credit"
+        type: line_of_credit
+        statement_formats: [pdf]
+      - slug: quick_cash
+        display: "Citi Quick Cash"
+        type: term_loan
+        statement_formats: [pdf]
+
+  # ── Digital banks ─────────────────────────────────────────────────────────
+
+  - slug: gxs
+    display_name: "GXS Bank"
+    legal_name: "GXS Bank Pte Ltd"
+    country: SG
+    regulator: MAS
+    notes: "Digital full bank (Grab + Singtel JV)"
+    products:
+      - slug: savings
+        display: "GXS Savings Account"
+        type: deposit
+        statement_formats: [pdf]
+        account_number_re: '^888-\d{6}-\d$'
+      - slug: flexiloan
+        display: "GXS FlexiLoan"
+        type: term_loan
+        statement_formats: [pdf]
+        account_number_re: '^800-\d{6}-\d{2}$'
+        notes: "Filename convention uses account-number prefix"
+
+  - slug: trust
+    display_name: "Trust Bank"
+    legal_name: "Trust Bank Singapore Ltd"
+    country: SG
+    regulator: MAS
+    notes: "Digital full bank (Standard Chartered + FairPrice Group JV)"
+    products:
+      - slug: savings
+        display: "Trust Savings Account"
+        type: deposit
+        statement_formats: [pdf, csv]
+      - slug: cc
+        display: "Trust Credit Card"
+        type: credit_card
+        statement_formats: [pdf]
+
+  - slug: maribank
+    display_name: "MariBank"
+    legal_name: "MariBank Singapore Pte Ltd"
+    country: SG
+    regulator: MAS
+    notes: "Digital full bank (Sea Group / Shopee)"
+    products:
+      - slug: savings
+        display: "Mari Savings Account"
+        type: deposit
+        statement_formats: [pdf, csv]
+      - slug: cc
+        display: "Mari Credit Card"
+        type: credit_card
+        statement_formats: [pdf]
+
+  - slug: anext
+    display_name: "ANEXT Bank"
+    legal_name: "ANEXT Bank Pte Ltd"
+    country: SG
+    regulator: MAS
+    notes: "Digital wholesale bank (Ant Group); SME-only"
+    products:
+      - slug: business_account
+        display: "ANEXT Business Account"
+        type: deposit
+        statement_formats: [pdf, csv]
+
+  # ── Non-bank consumer finance / BNPL / moneylenders ──────────────────────
+
+  - slug: atome
+    display_name: "Atome"
+    legal_name: "Atome Pte Ltd"
+    country: SG
+    regulator: MAS                # SPI license
+    notes: "BNPL — Buy Now Pay Later"
+    products:
+      - slug: bnpl
+        display: "Atome BNPL"
+        type: term_loan
+        statement_formats: []     # no formal statement; merchant tx via DBS/CC
+        notes: "No standalone statement; tx visible only on funding card statement (e.g. DBS CC)"
+
+  - slug: ez_loan
+    display_name: "EZ Loan"
+    legal_name: "EZ Loan Pte Ltd"
+    country: SG
+    regulator: MoF                # MAS-licensed moneylender (Ministry of Law list)
+    products:
+      - slug: personal_loan
+        display: "EZ Loan Personal Loan"
+        type: term_loan
+        statement_formats: [pdf]
+        notes: "MAS-licensed moneylender; Note of Contract format"
+
+  - slug: lending_bee
+    display_name: "Lending Bee"
+    legal_name: "Lending Bee Pte Ltd"
+    country: SG
+    regulator: MoF
+    products:
+      - slug: personal_loan
+        display: "Lending Bee Personal Loan"
+        type: term_loan
+        statement_formats: [pdf]
+
+  - slug: sands_credit
+    display_name: "Sands Credit"
+    legal_name: "Sands Credit Pte Ltd"
+    country: SG
+    regulator: MoF
+    products:
+      - slug: personal_loan
+        display: "Sands Credit Personal Loan"
+        type: term_loan
+        statement_formats: [pdf]
+        notes: "Note of Contract format; OCR-required (image-based PDF)"
+
+  # ── Investment-Linked Insurance (ILP) providers ──────────────────────────
+
+  - slug: singlife
+    display_name: "Singlife (Singapore Life)"
+    legal_name: "Singapore Life Ltd"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: savvy_invest
+        display: "Singlife Savvy Invest (ILP)"
+        type: investment_link
+        statement_formats: [pdf]
+        account_number_re: '^P\d{7}$'
+        notes: "Monthly investment transaction statement; multi-fund (Allianz / BGF / Infinity US500)"
+      - slug: wholelife
+        display: "Singlife Whole Life policies"
+        type: insurance
+        statement_formats: [pdf]
+      - slug: shield
+        display: "Singlife Shield / CareShield"
+        type: insurance
+        statement_formats: [pdf]
+
+  - slug: tokio_marine
+    display_name: "Tokio Marine"
+    legal_name: "Tokio Marine Life Insurance Singapore Ltd"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: wealth_pro
+        display: "Tokio Marine Wealth Pro ILP"
+        type: investment_link
+        statement_formats: [pdf, png]
+        notes: "5-fund ILP; statement parser deferred — only premium-history PNG available"
+
+  - slug: aia
+    display_name: "AIA Singapore"
+    legal_name: "AIA Singapore Private Limited"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: ilp
+        display: "AIA Investment-Linked Plans"
+        type: investment_link
+        statement_formats: [pdf]
+        notes: "Not in user corpus"
+      - slug: term_life
+        display: "AIA Term Life / Critical Illness"
+        type: insurance
+        statement_formats: [pdf]
+
+  - slug: prudential
+    display_name: "Prudential Singapore"
+    legal_name: "Prudential Assurance Company Singapore (Pte) Limited"
+    country: SG
+    regulator: MAS
+    products:
+      - slug: ilp
+        display: "Prudential PRUFlexicash / PRUWealth ILP"
+        type: investment_link
+        statement_formats: [pdf]
+
+  # ── Forex / Multi-currency / E-money ─────────────────────────────────────
+
+  - slug: wise
+    display_name: "Wise"
+    legal_name: "Wise Asia-Pacific Pte Ltd"
+    country: SG
+    regulator: MAS                # Major Payment Institution license
+    products:
+      - slug: multi_currency
+        display: "Wise Multi-Currency Account"
+        type: digital_wallet
+        statement_formats: [pdf, csv]
+        notes: "API access available — preferred over CSV import"
+
+  # ── Crypto exchanges ─────────────────────────────────────────────────────
+
+  - slug: coinbase
+    display_name: "Coinbase"
+    legal_name: "Coinbase Global, Inc."
+    country: US
+    regulator: SEC
+    products:
+      - slug: brokerage
+        display: "Coinbase Advanced Trade"
+        type: brokerage
+        statement_formats: [csv, pdf]
+        notes: "Read-only API available; CSV export via Reports tab as fallback"
+
+  - slug: crypto_com
+    display_name: "Crypto.com"
+    legal_name: "Foris DAX Asia Pte Ltd"
+    country: SG
+    regulator: MAS                # Major Payment Institution license
+    products:
+      - slug: brokerage
+        display: "Crypto.com Exchange + App"
+        type: brokerage
+        statement_formats: [csv]
+
+  # ── Government / Public ──────────────────────────────────────────────────
+
+  - slug: cpf
+    display_name: "Central Provident Fund Board"
+    legal_name: "Central Provident Fund Board"
+    country: SG
+    regulator: MoM                # Ministry of Manpower
+    products:
+      - slug: oa_sa_ma
+        display: "CPF Ordinary / Special / MediSave Accounts"
+        type: deposit
+        statement_formats: [pdf]
+        account_number_re: '^S\d{7}[A-Z]$'   # NRIC format
+        notes: "Statutory retirement / housing / healthcare savings"
+      - slug: cpf_is
+        display: "CPF Investment Scheme (CPFIS-OA)"
+        type: investment_link
+        statement_formats: [pdf, csv]
+        notes: "OA funds invested via iFAST / other CPFIS-approved brokers"
+      - slug: cpf_life
+        display: "CPF LIFE (annuity)"
+        type: insurance
+        statement_formats: [pdf]
+
+  - slug: iras
+    display_name: "Inland Revenue Authority of Singapore"
+    legal_name: "Inland Revenue Authority of Singapore"
+    country: SG
+    regulator: MoF
+    products:
+      - slug: noa
+        display: "Notice of Assessment (NOA)"
+        type: tax_assessment
+        statement_formats: [pdf]
+        notes: "Annual income tax assessment"
+
+# ── Index metadata ────────────────────────────────────────────────────────────
+schema_version: 1
+last_updated: "2026-05-14"
+total_banks: 23
+total_products: ~50  # approx; render_summary() in parser_registry.py computes exactly

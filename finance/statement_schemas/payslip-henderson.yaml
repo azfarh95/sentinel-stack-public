@@ -1,0 +1,49 @@
+# YourAgency Security Services daily-rated payslip schema
+# CHARACTERISTIC: one PDF contains MULTIPLE weekly payslips (typically 4-5 per month).
+employer: YourAgency Security Services Pte Ltd
+type: weekly_daily_rated_payslip
+gl_account_code: "4120"   # YourAgency salary income
+currency: SGD
+
+filename_patterns:
+  - "YourAgency.*Payslip.*\\.pdf"
+  - "YourAgency Payslips.*\\.pdf"
+
+header_markers:
+  - "HENDERSON SECURITY SERVICES PTE LTD"
+  - "DAILY RATED PAYSLIP"
+
+# Each weekly slip starts with "HENDERSON SECURITY SERVICES PTE LTD"
+# A monthly PDF aggregates multiple weeks. Parser splits by this marker.
+slip_separator: "^HENDERSON SECURITY SERVICES PTE LTD\\*?\\*?$"
+
+# Per-slip fields
+fields:
+  employee_id_regex: "EMPLOYEE\\s*:\\s*(\\w+)\\s+(.+)$"
+  nric_regex: "NRIC\\s*:\\s*(\\w+)"
+  basic_per_day_regex: "BASIC\\s*:\\s*\\$\\s*([\\d.]+)\\s*PER DAY"
+
+  # Day-of-work table
+  day_table_columns: [SITE, DATE, TIME_IN, TIME_OUT, GROSS_AMT, REMARKS]
+  day_row_regex: "^(\\d{4})\\s+(\\d{2}/\\d{2}/\\d{4})\\s+(\\d{2}:\\d{2})\\s+(\\d{2}:\\d{2})\\s+([\\d.]+)(?:\\s+(.+))?$"
+
+  total_basic_salary_regex: "TOTAL BASIC SALARY\\s*:\\s*([\\d,]+\\.\\d{2})(?:\\s+OVERPAYMENT\\s+([\\d.]+))?"
+  ot_amount_regex: "OT AMOUNT\\s*:\\s*([\\d.]+)"
+  allowances_regex: "ALLOWANCES\\s*:\\s*([\\d.]+)"
+  misc_payments_regex: "MISC\\. PAYMENTS\\s*:\\s*([\\d.]+)"
+  employee_cpf_regex: "LESS EMPLOYEE CPF\\s*:\\s*([\\d.]+)"
+  adv_loan_regex: "LESS ADV / LOAN\\s*:\\s*([\\d.]+)"
+  take_home_pay_regex: "TAKE HOME PAY\\s*:\\s*([\\d.]+)"
+  week_begin_regex: "BEGINNING FROM\\s+(\\d{2}/\\d{2}/\\d{4})\\s+TO\\s+(\\d{2}/\\d{2}/\\d{4})"
+  payment_date_regex: "Payment Date:\\s*(\\d{2}/\\d{2}/\\d{4})"
+  # Date fallback: if payment_date missing, use last day-table date + 7d (next payday)
+
+# Reconciliation note discovered 2026-05-14:
+# Sentinel learned that YourAgency Jan'26 had a $4.50 gap between TAKE_HOME_PAY and
+# the sum of (CPF + ADV_LOAN + ethnic-fund deductions). YourAgency does not print
+# ethnic-fund (MBMF) on the slip — auto-plug to a 5520 ethnic-fund deduction line.
+auto_reconciliation_plug:
+  account_code: "5520"
+  narration: "YourAgency auto-plug (likely MBMF/ECA not on payslip)"
+
+posting_template: payslip_youragency_v1

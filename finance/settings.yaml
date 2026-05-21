@@ -1,0 +1,26 @@
+# Sentinel Finance — Application settings.
+# Edit via Mini App at /config/datetime (UI) or hand-edit here + restart portfolio-mcp.
+
+# Date display format used across the Mini App. Values:
+#   dd-MM     → 15-05         (default)
+#   MM-dd     → 05-15
+#   dd MMM    → 15 May
+#   yyyy-MM-dd → 2026-05-15
+date_format: "dd-MM"
+
+# Timezone used by APScheduler + forecast date computations.
+# Olson IDs (https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
+timezone: "Asia/Singapore"
+
+# YourAgency Security income calibration.
+# Used by cash_forecast._youragency_deployments_in_range when a calendar event
+# does not include an explicit "$N" amount in its title.
+youragency:
+  # Default NET pay assumed per shift if not stated in the event title.
+  # Per user 2026-05-13: 120 SGD/shift is the take-home rate.
+  default_pay_per_shift: 120.00
+
+  # Confidence factor applied to events whose title contains "pending".
+  # 0.5 = treat each pending shift as 50% likely to actually pay out.
+  # Set to 1.0 to count all pending shifts at full rate.
+  pending_factor: 0.5

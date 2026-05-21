@@ -1,0 +1,6 @@
+flask
+pyotp
+qrcode
+keyring
+websocket-client
+telethon

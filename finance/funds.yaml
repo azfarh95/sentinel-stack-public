@@ -1,0 +1,157 @@
+# Sentinel Finance — Fund Universe
+#
+# Single source of truth for fund-level holdings across all 3 policies.
+# Drives scripts/fund_tracker.py daily NAV refresh + /drill/funds page.
+#
+# Sources of NAV (in priority order, first hit wins):
+#   wise         : Wise /v1/rates (FX only, not fund NAVs)
+#   fsmone       : fundsupermart.com factsheet — JS-rendered, needs Playwright
+#   morningstar  : sg.morningstar.com — server-rendered (preferred)
+#   manual       : last manual entry, with stale-warning if >30 days
+#
+# Each fund holds: name, isin (optional), source URLs, last NAV + date,
+# and per-policy unit holdings.
+
+funds:
+  # ── Tokio Marine ILP (5 funds) ────────────────────────────────────────────
+  - id: franklin_tech_sgd_h
+    name: "Franklin Technology Fund Acc SGD-H"
+    isin: ""           # TODO
+    fsmone_id: ""      # TODO
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 35.0800
+    last_nav_date: "2026-05-13"
+    holdings:
+      - { policy: "Tokio Marine ILP",       units: 100.82738, coa_code: "12211" }
+
+  - id: guinness_global_innovators_usd
+    name: "Guinness Global Innovators Fund Acc USD"
+    isin: "IE00BQXX3457"
+    fsmone_id: ""
+    currency: "USD"
+    sources: ["morningstar", "manual"]
+    last_nav: 33.5643
+    last_nav_date: "2026-05-13"
+    holdings:
+      - { policy: "Tokio Marine ILP",       units: 70.48620, coa_code: "12212" }
+
+  - id: infinity_us500_sgd
+    name: "Infinity US 500 Stock Index Fund Acc SGD"
+    isin: ""
+    fsmone_id: "370283"
+    currency: "SGD"
+    sources: ["fsmone", "manual"]    # confirmed on fsmone
+    last_nav: 4.2820
+    last_nav_date: "2026-05-13"
+    holdings:
+      - { policy: "Tokio Marine ILP",       units: 491.47565, coa_code: "12213" }
+      - { policy: "Singlife Savvy Invest",  units: 1119.22991, coa_code: "12223" }
+
+  - id: canaccord_opportunity_sgd_h
+    name: "Canaccord Genuity Opportunity Fund Acc S GD-H"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["manual"]
+    last_nav: 1.6625
+    last_nav_date: "2026-05-13"
+    holdings:
+      - { policy: "Tokio Marine ILP",       units: 626.16611, coa_code: "12214" }
+
+  - id: fssa_regional_india_sgd
+    name: "FSSA Regional India Fund Acc SGD"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 11.5976
+    last_nav_date: "2026-05-13"
+    holdings:
+      - { policy: "Tokio Marine ILP",       units: 66.75085, coa_code: "12215" }
+
+  # ── Singlife Savvy Invest (3 funds; Infinity US500 shared with Tokio above)
+  - id: allianz_inc_growth_amh2_sgd
+    name: "Allianz Inc and Growth AMH2 SGD"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 7.6396
+    last_nav_date: "2026-04-12"
+    holdings:
+      - { policy: "Singlife Savvy Invest",  units: 405.96878, coa_code: "12221" }
+
+  - id: bgf_world_healthsci_a2_sgd_h
+    name: "BGF World Healthsci Fund A2 SGD Hedged"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 22.7900
+    last_nav_date: "2026-04-12"
+    holdings:
+      - { policy: "Singlife Savvy Invest",  units: 123.28448, coa_code: "12222" }
+
+  # ── CPF-IS via iFAST (5 funds) ────────────────────────────────────────────
+  - id: franklin_us_opportunities_sgd_cpf
+    name: "FTIF - Franklin US Opportunities AS Acc SGD (CPF)"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 29.4700
+    last_nav_date: "2026-04-30"
+    holdings:
+      - { policy: "CPF-IS",                 units: 709.2780, coa_code: "12141" }
+
+  - id: allianz_global_high_payout_sgd
+    name: "Allianz Global High Payout AM SGD"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 0.7170
+    last_nav_date: "2026-04-30"
+    holdings:
+      - { policy: "CPF-IS",                 units: 21222.9800, coa_code: "12142" }
+
+  - id: amova_japan_dividend_sgd_h
+    name: "Amova Japan Dividend Equity SGD-H (formerly Nikko AM)"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 2.2437
+    last_nav_date: "2026-04-30"
+    holdings:
+      - { policy: "CPF-IS",                 units: 2591.9100, coa_code: "12143" }
+
+  - id: amova_singapore_equity_sgd
+    name: "Amova Singapore Equity SGD (formerly Nikko AM)"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 5.3036
+    last_nav_date: "2026-04-30"
+    holdings:
+      - { policy: "CPF-IS",                 units: 644.6600, coa_code: "12144" }
+
+  - id: abrdn_singapore_equity_sgd
+    name: "abrdn Singapore Equity SGD"
+    isin: ""
+    fsmone_id: ""
+    currency: "SGD"
+    sources: ["morningstar", "manual"]
+    last_nav: 10.1978
+    last_nav_date: "2026-04-30"
+    holdings:
+      - { policy: "CPF-IS",                 units: 201.2200, coa_code: "12145" }
+
+# Policy total caches (populated by fund_tracker.py on each refresh)
+# Used by balance_sheet.py to update ILP + CPF-IS Firefly accounts.
+policy_totals:
+  "Tokio Marine ILP":         {sgd: 10463.12, last_calc: "2026-05-13"}
+  "Singlife Savvy Invest":    {sgd: 10345.48, last_calc: "2026-04-12"}
+  "CPF-IS":                   {sgd: 47405.79, last_calc: "2026-04-30"}

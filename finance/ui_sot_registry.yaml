@@ -1,0 +1,99 @@
+# UI ↔ SoT Registry (v2.24, per Perplexity pass-10 Q2)
+# -------------------------------------------------------------------
+# Every dashboard endpoint that renders a headline number maps to the
+# canonical Source-of-Truth path that should produce that number.
+# inv32 (headline parity) walks this registry and asserts each rendered
+# headline equals the SoT output within tolerance.
+#
+# Format:
+#   <endpoint>:
+#     headline:        <human description>
+#     module:          <python.module>
+#     func:            <function name>
+#     result_path:     <dotted path inside func's return dict>
+#     sot:             <named SoT computation — must match a recognised pattern>
+#     tolerance:       <float, SGD>
+#     notes:           <optional>
+#
+# Recognised SoT patterns (resolved by inv32):
+#   resolve_class:<A|B|C>            sum resolve(c).sgd for c in that class
+#   resolve_total_loans              ab.resolve_total_loans(s).sgd
+#   resolve_total_cc                 ab.resolve_total_cc(s).sgd
+#   resolve_code:<account_code>      ab.resolve(backend, code).sgd
+#   balance_sheet_net_worth          bs.build_balance_sheet()['net_worth_sgd']
+#   sum_classes:A,B,C                resolve(c).sgd summed across CLASS_*_*
+#   coa_list:1111,1113,...           explicit list of CoA codes; sum resolve(c).sgd
+#   yaml_node:<node_id>              sum resolve(c).sgd over every CoA inside
+#                                    balance_sheet_config.yaml node with that id
+#
+# To add a new endpoint: add its entry here AND make sure inv32 covers
+# the sot pattern (extend the resolver dispatch if needed).
+
+endpoints:
+
+  - endpoint: /drill/loans
+    headline: "Total Loans"
+    module: app.drill
+    func: build_liability_drill
+    func_kwargs: {only_type: loans}
+    result_path: total_outstanding
+    sot: resolve_total_loans
+    tolerance: 0.50
+    notes: "fixed v2.21 (was reading Firefly). inv30 also covers this."
+
+  - endpoint: /drill/cc
+    headline: "Total Credit Cards"
+    module: app.drill
+    func: build_liability_drill
+    func_kwargs: {only_type: credit_card}
+    result_path: total_outstanding
+    sot: resolve_total_cc
+    tolerance: 0.50
+    notes: "same code path as /drill/loans; v2.21 fix covers it"
+
+  - endpoint: /cash_forecast
+    headline: "Starting POSB Balance"
+    module: app.cash_forecast
+    func: build_forecast
+    func_kwargs: {horizon_days: 90}
+    result_path: starting_balance
+    sot: resolve_code:1111
+    tolerance: 0.50
+    notes: "fixed v2.22 (was raw GL sum bypassing Gate 5)"
+
+  - endpoint: /
+    headline: "Home glance — loans card"
+    module: app.home
+    func: build_home_summary
+    func_kwargs: {}
+    result_path: loans.sgd
+    sot: resolve_total_loans
+    tolerance: 0.50
+
+  - endpoint: /
+    headline: "Home glance — cc card"
+    module: app.home
+    func: build_home_summary
+    func_kwargs: {}
+    result_path: cc.sgd
+    sot: resolve_total_cc
+    tolerance: 0.50
+
+  - endpoint: /
+    headline: "Home glance — bank card"
+    module: app.home
+    func: build_home_summary
+    func_kwargs: {}
+    result_path: bank.sgd
+    sot: yaml_node:cash_and_bank
+    tolerance: 1.00
+    notes: |
+      "Bank" is a user-facing grouping defined by balance_sheet_config.yaml's
+      cash_and_bank node — includes API-backed banks (Wise, Class B) and
+      statement-backed banks (POSB/Maybank/SC, Class A). NOT the same as
+      anchor_class A. Source-of-truth is the YAML node + resolve() per CoA.
+
+# Future entries (added as v2.25+ ships):
+#  - endpoint: /drill/bank (headline = SUM(Class A) ; dual display per Q1)
+#  - endpoint: /balance_sheet (net_worth_sgd parity check)
+#  - endpoint: /drill/cpf, /drill/ilp, /drill/crypto (per-class roll-ups)

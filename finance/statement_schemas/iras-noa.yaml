@@ -1,0 +1,41 @@
+# IRAS Notice of Assessment (NOA) schema
+# Note: NOA is REFERENCE data, not a tx ledger. Drives expected-tax-payable journal.
+issuer: Inland Revenue Authority of Singapore
+type: tax_assessment_notice
+account_class: 2  # liability when payable
+gl_account_code: "2310"   # Tax Payable (current)
+currency: SGD
+
+filename_patterns:
+  - "NOA.*\\.pdf"
+  - "Notice of Assessment.*\\.pdf"
+
+header_markers:
+  - "Income Tax – Notice of Assessment"
+  - "YEAR OF ASSESSMENT"
+
+tax_reference_regex: "Tax Reference Number\\s*:\\s*(\\w+)"
+
+assessment_date_regex: "Date\\s*:\\s*(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+
+year_of_assessment_regex: "YEAR OF ASSESSMENT\\s+(\\d{4})"
+
+# Tax summary table fields
+fields:
+  total_income_regex: "EMPLOYMENT\\s+([\\d,]+\\.\\d{2})"
+  total_deductions_regex: "RELIEFS\\s+([\\d,]+\\.\\d{2})"
+  chargeable_income_regex: "([\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})$"
+  earned_income_relief_regex: "Earned Income\\s+([\\d,]+\\.\\d{2})"
+  nsman_relief_regex: "NSman.*?\\s+([\\d,]+\\.\\d{2})"
+  cpf_relief_regex: "Provident Fund/ Life\\s+([\\d,]+\\.\\d{2})"
+  donations_regex: "DONATIONS\\s+([\\d,]+\\.\\d{2})"
+  tax_rebate_regex: "Tax Rebate\\s+([\\d,]+\\.\\d{2})"
+  tax_payable_regex: "Tax Payable\\s+by\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+\\$([\\d,]+\\.\\d{2})"
+
+# Posting template: when NOA issued, post a JOURNAL recognising the year's tax expense
+# DR 5500 Income Tax Expense
+# CR 2310 Tax Payable (IRAS)
+# Settlement (via GIRO from POSB) closes the liability over the year.
+posting_template: noa_v1
+
+is_tx_ledger: false   # this is a single-document declaration, not a recurring tx feed

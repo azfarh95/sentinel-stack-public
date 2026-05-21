@@ -1,0 +1,61 @@
+# SC (Maybank-branded?) CreditAble revolving credit/loan schema
+# Note: despite the filename, CreditAble is a MAYBANK product (eStatement says "Maybank CreditAble").
+# Distinguished from Maybank Platinum Visa by account-number prefix.
+bank: Maybank
+product: Maybank CreditAble
+account_class: 2
+gl_account_code: "2113"  # SC card slot — but reassign to "2114" if SC CC vs CreditAble differ
+currency: SGD
+
+filename_patterns:
+  - "CreditAble.*\\.pdf"
+  - "CreditAble Funds Transfer.*\\.pdf"
+
+header_markers:
+  - "STATEMENT OF ACCOUNT"
+  - "Maybank CreditAble"
+
+account_number:
+  regex: "Account Number\\s*:\\s*(\\d{11})"
+  example: "04133837707"
+
+statement_date:
+  regex: "Statement Date\\s*:\\s*(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+interest_rate:
+  regex: "Prevailing Effective\\s+Interest Rate\\s*:\\s*([\\d.]+)%"
+
+balance_anchors:
+  opening: "Opening Balance\\s+([\\d,]+\\.\\d{2})-?"
+  closing: "Closing Balance\\s+([\\d,]+\\.\\d{2})-?"
+
+# Note: balances may have trailing "-" meaning the account is in CREDIT (deposit balance,
+# unusual for a revolving loan but happens when there's a transient overpayment).
+balance_sign:
+  trailing_dash: credit_balance     # opposite of typical OD
+
+tx_table:
+  columns: [DATE, TRANSACTION_DESCRIPTION, WITHDRAWALS, DEPOSITS, BALANCE]
+  date_format: "%d/%m"   # short — year from statement_date
+
+tx_header_regex: "^(\\d{2}/\\d{2})\\s+(.+?)\\s+([\\d,]+\\.\\d{2})(?:\\s+([\\d,]+\\.\\d{2})-?)?$"
+
+tx_types:
+  - "Transfer from"
+  - "Transfer to"
+  - "OD Interest"
+  - "Opening Balance"
+  - "Closing Balance"
+
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    - kind: counterparty_name
+      pattern: "^([A-Z][A-Z\\s]+)$"
+      example: "AZFAR HAKIM BIN ABDU"
+
+exclude_lines:
+  - "^P\\.O\\. Box"
+  - "^Please examine this statement"
+  - "^Page \\d+ of"

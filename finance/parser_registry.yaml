@@ -1,0 +1,291 @@
+# Sentinel Finance — Parser Registry
+#
+# What document parsers Sentinel has, each pointing at a (bank, product) tuple
+# defined in bank_product_registry.yaml.
+#
+# Schema per parser:
+#   slug             : stable identifier (matches ParsedStatement.bank etc.)
+#   handles          : { bank: <bank_slug>, product: <product_slug> } — FK to bank_product_registry
+#   parser_module    : Python import path
+#   parser_function  : entry-point function name
+#   coa_facility     : default CoA code for resulting journals
+#   detection_markers: text strings that must appear in first ~500 chars to match
+#   anti_markers     : strings that disqualify a match
+#   filename_hints   : filename patterns (case-insensitive)
+#   field_anchors    : regex patterns for header field extraction
+#   line_pattern     : regex for per-tx line extraction
+#   requires_ocr     : true when source PDF is image-only
+#   notes            : known quirks
+#
+# Coverage stats (sample count + date range) are populated dynamically from
+# statement_registry / payslip_registry via parser_registry.coverage_for(slug).
+
+parsers:
+
+  # ── Credit Card statements ───────────────────────────────────────────────
+
+  - slug: dbs_cc
+    handles: { bank: dbs, product: cc }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_dbs_cc
+    coa_facility: "2111"
+    detection_markers:
+      - "Credit Cards"
+      - "Statement of Account"
+    anti_markers:
+      - "Cashline"
+    filename_hints:
+      - "dbs cc"
+      - "credit cards consolidated"
+      - "credit cards statement"
+    field_anchors:
+      previous_balance: 'PREVIOUS BALANCE\s+([\d,]+\.\d{2})'
+      closing_balance: 'Total Outstanding Balance.*?\n\s*\$?([\d,]+\.\d{2})'
+    line_pattern: '^(\d{1,2}\s+[A-Z]{3})\s+(.+?)\s+([\d,]+\.\d{2})(?:\s+CR)?$'
+    requires_ocr: false
+
+  - slug: dbs_cashline
+    handles: { bank: dbs, product: cashline }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_dbs_cashline
+    coa_facility: "2121"
+    detection_markers: ["Cashline", "CASHLINE ACCOUNT NO"]
+    filename_hints: ["dbs cl", "dbs cashline", "cashline statement"]
+    field_anchors:
+      previous_balance: 'PREVIOUS BALANCE\s+([\d,]+\.\d{2})'
+      closing_balance: 'Total Outstanding Balance.*?S?\$?([\d,]+\.\d{2})'
+    requires_ocr: false
+    notes: "Filter 'CLOSING BALANCE' marker row from line scan (not a transaction)"
+
+  - slug: hsbc_cc
+    handles: { bank: hsbc, product: cc }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_hsbc
+    coa_facility: "2114"
+    detection_markers: ["HSBC", "VISA REVOLUTION"]
+    filename_hints: ["hsbc", "_temp_"]
+    field_anchors:
+      previous_balance: 'Previous Statement Balance\s+([\d,]+\.\d{2})'
+      closing_balance: 'Total Due\s+([\d,]+\.\d{2})'
+    requires_ocr: true
+    notes: "Image-only PDF; tesseract OCR fallback. Regex tolerates OCR space-glitches (e.g. '31Dec' for '31 Dec')."
+
+  - slug: maybank_cc
+    handles: { bank: maybank, product: cc }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_maybank_cc
+    coa_facility: "2112"
+    detection_markers: ["Maybank", "Platinum Visa"]
+    filename_hints: ["maybank cc", "platinum visa"]
+    field_anchors:
+      statement_date: 'Statement Date\s*:\s*(\d{1,2}/\d{1,2}/\d{4})'
+      previous_balance: 'Previous Balance\s*:\s*([\d,.]+)'
+      closing_balance: 'Total Due\s*:\s*([\d,.]+)'
+    requires_ocr: false
+
+  - slug: maybank_ca
+    handles: { bank: maybank, product: creditable }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_maybank_ca
+    coa_facility: "2213"
+    detection_markers: ["CreditAble"]
+    filename_hints: ["maybank ca", "creditable"]
+    field_anchors:
+      statement_date: 'Statement Date\s*:\s*(\d{1,2}\s+[A-Z]{3}\s+\d{4})'
+      previous_balance: '\d{2}/\d{2}\s+Opening Balance\s+([\d,]+\.\d{2})-?'
+      closing_balance: 'Outstanding Balance\s+([\d,]+\.\d{2})'
+    requires_ocr: false
+    notes: "Trailing '-' on amounts indicates debit/OD."
+
+  - slug: sc
+    handles: { bank: sc, product: cc }
+    sub_handles:
+      - { bank: sc, product: balance_transfer }   # one PDF covers both
+    parser_module: app.cc_statement_parser
+    parser_function: parse_sc
+    coa_facility: "2113"
+    detection_markers: ["Standard Chartered", "SC Mobile"]
+    filename_hints: ["sc cc", "standard chartered", "scbl", "estatement"]
+    field_anchors:
+      previous_balance: 'BALANCE FROM PREVIOUS STATEMENT\s+([\d,]+\.\d{2})'
+      closing_balance: 'NEW BALANCE\s+([\d,]+\.\d{2})'
+    requires_ocr: false
+    notes: "Combined CC + BT statement. per-CoA breakdown stored in ParsedStatement.extras."
+
+  - slug: uob
+    handles: { bank: uob, product: cashplus }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_uob
+    coa_facility: "2122"
+    detection_markers: ["United Overseas Bank", "UOB"]
+    filename_hints: ["uob"]
+    field_anchors:
+      previous_balance: '\d{1,2}\s+[A-Z][a-z]{2}\s+OPENING BALANCE\s+([\d,]+\.\d{2})\s*(?:OD)?'
+      closing_balance: '(?:\d{1,2}\s+[A-Z][a-z]{2}\s+)?CLOSING BALANCE\s+([\d,]+\.\d{2})\s*(?:OD)?'
+    requires_ocr: false
+    notes: "OD suffix on amount indicates overdrawn."
+
+  - slug: gxs
+    handles: { bank: gxs, product: flexiloan }
+    sub_handles:
+      - { bank: gxs, product: savings }
+    parser_module: app.cc_statement_parser
+    parser_function: parse_gxs
+    coa_facility: "2212"
+    detection_markers: ["GXS", "FlexiLoan"]
+    filename_hints: ["gxs", "800"]
+    field_anchors:
+      previous_balance: '[Oo]pening [Bb]alance\s+-?\$?([\d,]+\.\d{2})'
+    requires_ocr: false
+    notes: "Single parser handles both FlexiLoan (800-* prefix, CoA 2212) and Savings (888-* prefix, asset)."
+
+  # ── Bank-side savings ────────────────────────────────────────────────────
+
+  - slug: maybank_savings
+    handles: { bank: maybank, product: ar_rihla }
+    parser_module: app.bank_pdf_importer
+    parser_function: import_pdf
+    coa_facility: "1114"
+    detection_markers: ["Ar Rihla Regular Savings", "Maybank Singapore Limited"]
+    filename_hints: ["ar rihla", "maybank savings"]
+    requires_ocr: false
+
+  - slug: sc_savings
+    handles: { bank: sc, product: savings }
+    parser_module: app.bank_pdf_importer
+    parser_function: import_pdf
+    coa_facility: "1115"
+    detection_markers: ["Standard Chartered", "Current Savings"]
+    filename_hints: ["standard chartered savings", "estatement_standard chartered current savings"]
+    requires_ocr: false
+
+  - slug: posb_savings_pdf
+    handles: { bank: dbs, product: posb_savings }
+    parser_module: scripts.posb_to_firefly_csv
+    parser_function: convert
+    coa_facility: "1111"
+    detection_markers: ["POSB Savings", "0430"]
+    filename_hints: ["deposit account statement"]
+    requires_ocr: false
+    notes: "Text-only PDF with embedded CID font glyphs in header."
+
+  - slug: posb_savings_csv
+    handles: { bank: dbs, product: posb_savings }
+    parser_module: app.posb_ibanking_importer
+    parser_function: scan_and_import
+    coa_facility: "1111"
+    detection_markers: ["Transaction Date,Reference"]
+    filename_hints: ["transaction_history"]
+    requires_ocr: false
+
+  # ── Payslips (per-employer formats) ──────────────────────────────────────
+
+  - slug: payslip_az_united
+    handles: { employer: az_united, doc_type: payslip }     # 'employer' replaces 'bank' here
+    parser_module: app.payslip_parser
+    parser_function: detect_and_parse
+    coa_facility: "4110"
+    detection_markers: ["AZ United Pte Ltd", "PAYSLIP"]
+    filename_hints: ["_payslip_"]
+    requires_ocr: false
+    notes: "PDF text concatenates EARNINGS+DEDUCTIONS columns. Known-label whitelist + Total Earnings reconciliation."
+
+  - slug: payslip_youragency
+    handles: { employer: youragency, doc_type: payslip }
+    parser_module: app.payslip_parser
+    parser_function: detect_and_parse
+    coa_facility: "4120"
+    detection_markers: ["YourAgency", "PAYSLIP"]
+    filename_hints: ["youragency"]
+    requires_ocr: false
+
+  # ── Investment statements ────────────────────────────────────────────────
+
+  - slug: ilp_singlife
+    handles: { bank: singlife, product: savvy_invest }
+    parser_module: app.ilp_statement_parser
+    parser_function: detect_and_parse
+    coa_facility: "1222"
+    detection_markers: ["Singlife", "Savvy Invest"]
+    filename_hints: ["singlife savvy invest"]
+    field_anchors:
+      policy_number: 'PolicyNumber\s*:?\s*([A-Z0-9]+)'
+      premium_received: 'TotalPremiums?Received[^\d]*?([\d,]+\.\d{2})'
+    requires_ocr: false
+    notes: "Heavy text concatenation. Per-fund routing via funds.yaml.coa_code; falls back to 12229."
+
+  - slug: ilp_tokio
+    handles: { bank: tokio_marine, product: wealth_pro }
+    parser_module: app.ilp_statement_parser
+    parser_function: detect_and_parse
+    coa_facility: "1221"
+    detection_markers: ["Tokio Marine"]
+    filename_hints: ["tokio marine"]
+    requires_ocr: false
+    notes: "Deferred — only premium-history PNG available currently."
+
+  - slug: cpf_statement
+    handles: { bank: cpf, product: oa_sa_ma }
+    parser_module: app.cpf_statement_parser
+    parser_function: detect_and_parse
+    coa_facility: "1211,1212,1213,12149"
+    detection_markers: ["Central Provident Fund", "CPF Account Number"]
+    filename_hints: ["cpf statement", "transaction history"]
+    row_codes: ["BAL", "CON", "INV", "INT", "DPS", "CSL", "MSL", "PMI", "SUP"]
+    requires_ocr: false
+    notes: "CON rows extraction-only (overlap with payslip parser)."
+
+  # ── Loan agreements (DB-seed parsers, no journals) ───────────────────────
+
+  - slug: loan_agreement_ez
+    handles: { bank: ez_loan, product: personal_loan }
+    parser_module: app.loan_agreement_parser
+    parser_function: detect_and_parse
+    coa_facility: "2221"
+    detection_markers: ["EZ Loan Pte Ltd", "Licensed Moneylender"]
+    filename_hints: ["loan agreement", "el-"]
+    requires_ocr: false
+
+  - slug: loan_agreement_sands
+    handles: { bank: sands_credit, product: personal_loan }
+    parser_module: app.loan_agreement_parser
+    parser_function: detect_and_parse
+    coa_facility: "2223"
+    detection_markers: ["SANDS CREDIT PTE LTD", "MONEYLENDERS ACT"]
+    filename_hints: ["loan agreement", "16125"]
+    requires_ocr: true
+    notes: "OCR-required; OCR character substitutions ('Tnstalment'→'Instalment')."
+
+  # ── Crypto reports (classification only — parser pending) ────────────────
+
+  - slug: crypto_coinbase_csv
+    handles: { bank: coinbase, product: brokerage }
+    parser_module: app.doc_classifier
+    parser_function: classify
+    coa_facility: "1231"
+    detection_markers: ["Quantity Transacted", "Price at Transaction"]
+    filename_hints: ["coinbase", "53019480"]
+    requires_ocr: false
+    notes: "Filed to Crypto/. Dedicated parser pending (Coinbase API path preferred)."
+
+  - slug: crypto_coinbase_pdf
+    handles: { bank: coinbase, product: brokerage }
+    parser_module: app.doc_classifier
+    parser_function: classify
+    coa_facility: "1231"
+    detection_markers: ["Coinbase Global", "Coinbase, Inc"]
+    filename_hints: ["coinbase"]
+    requires_ocr: false
+
+# Metadata
+schema_version: 2
+last_updated: "2026-05-14"
+references_registry: "bank_product_registry.yaml"
+maintainer_notes: |
+  Adding a new parser:
+  1. Ensure the (bank, product) tuple exists in bank_product_registry.yaml
+  2. Add parser entry here with handles: { bank: ..., product: ... }
+  3. Implement parser_module.parser_function
+  4. Wire doc_classifier rule (app/doc_classifier.py)
+  5. Run: python -m app.backfill_registries
+  6. Verify: python -m app.parser_registry [--slug your_new_slug]

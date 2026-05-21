@@ -1,0 +1,7 @@
+# Sentinel WoL device registry — managed via web UI.
+# You can also hand-edit this file; the UI will pick it up live.
+
+- name: Sentinel PC
+  mac: 04:42:1A:98:E4:6B
+  ip: 192.168.50.74
+  note: ''

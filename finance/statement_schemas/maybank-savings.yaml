@@ -1,0 +1,78 @@
+# Maybank Ar Rihla Regular Savings Account-i schema
+bank: Maybank
+product: Ar Rihla Regular Savings Account-i
+account_class: 1  # asset
+gl_account_code: "1114"
+currency: SGD
+
+filename_patterns:
+  - "Ar Rihla.*\\.pdf"
+  - "Maybank.*Savings.*\\.pdf"
+
+header_markers:
+  - "BRANCH"
+  - "Ar Rihla Regular Savings Account-i"
+
+account_number:
+  regex: "Account No\\.\\s*:\\s*(\\d{11})"
+  example: "14030791138"
+
+statement_date:
+  regex: "As at\\s+(\\d{1,2}\\s+\\w+\\s+\\d{4})"
+  format: "%d %B %Y"      # full month name
+
+balance_anchors:
+  opening: "(?:^|\\s)Opening Balance\\s+([\\d,]+\\.\\d{2})"
+  closing: "(?:^|\\s)Closing Balance\\s+([\\d,]+\\.\\d{2})"
+  total: "Total\\s+([\\d,]+\\.\\d{2})\\s+([\\d,]+\\.\\d{2})"
+
+tx_table:
+  columns: [DATE, TRANSACTION_DESCRIPTION, WITHDRAWAL, DEPOSIT, BALANCE]
+  date_format: "%d %b"
+
+tx_header_regex: "^(\\d{1,2})\\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\\s+(.+?)\\s+([\\d,]+\\.\\d{2})(?:\\s+([\\d,]+\\.\\d{2}))?$"
+
+tx_types:
+  - "Inward FAST"
+  - "VISA Card Pymt"
+  - "Transfer to"
+  - "Transfer from"
+  - "Service Charge"
+  - "Opening Balance"
+  - "Closing Balance"
+  - "Outward FAST"
+  - "GIRO"
+  - "MEPS Receipt"
+  - "Cheque Deposit"
+  - "Cash Withdrawal"
+  - "Cash Deposit"
+  - "Salary"
+  - "Interest Credit"
+  - "Bill Payment"
+  - "Advice"
+  - "FAST Payment"
+  - "FAST Collection"
+  - "Debit Card"
+
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    # PRIORITY 1: name + masked-account-last-4 (combined, most specific)
+    # POSITIONAL: the 4-digit last-4 of own accounts (POSB own = 7766,
+    # Maybank CC = 7004, Maybank CreditAble = 7707, etc.).
+    - kind: counterparty_with_last4
+      pattern: "^([A-Z][A-Z\\s]+),\\s*\\*{7,}(\\d{4})$"
+      example: "AZFAR HAKIM BIN ABDU, *******1263"
+    - kind: counterparty_with_ref_type
+      pattern: "^([A-Z][A-Z\\s]+),\\s+(OTHR-Transfer|OTHR Other)$"
+      example: "AZFAR HAKIM BIN ABDU, OTHR-Transfer"
+    # PRIORITY 2: just the masked last-4 (Maybank CC payment row)
+    - kind: masked_account_last4
+      pattern: "^\\*{7,}(\\d{4})$"
+      example: "************7004"
+
+exclude_lines:
+  - "^Page \\d+ of"
+  - "^Total\\s+"
+  - "^Maybank Singapore Limited"
+  - "^Messages For You"

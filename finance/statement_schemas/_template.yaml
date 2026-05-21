@@ -1,0 +1,77 @@
+# Template — copy this when adding a new bank-product schema.
+# Fill in everything marked TODO. Delete sections that don't apply.
+# Validate against ../_meta_schema.yaml after writing.
+
+# ─── Identity (REQUIRED — at least one of bank/employer/issuer) ─────────────
+bank: TODO                       # e.g. "POSB", "Maybank", "DBS"
+# employer: TODO                  # for payslips instead of bank
+# issuer: TODO                    # for govt/credit-bureau docs
+
+product: TODO                    # e.g. "POSB Savings"
+account_class: 1                 # 1=asset 2=liability 3=equity 4=income 5=expense
+gl_account_code: "TODO"          # primary leg CoA. null for reference-only docs.
+currency: SGD
+requires_ocr: false              # true for image-PDFs
+
+# ─── Recognition ──────────────────────────────────────────────────────────────
+filename_patterns:
+  - "TODO.*\\.pdf"
+
+header_markers:
+  - "TODO — string that appears in page 1 text"
+
+# ─── Identifier fields (use the ones relevant to this doc) ───────────────────
+account_number:
+  regex: "TODO"
+  example: "TODO"
+
+# card_number:        for CC statements
+#   regex: "(\\d{4}-\\d{4}-\\d{4}-\\d{4})"
+# policy_number:      for insurance/ILP
+#   regex: "PolicyNumber\\s*:\\s*(P\\d+)"
+# cpf_account_number: for CPF
+#   regex: "(S\\d+[A-Z])"
+
+# ─── Temporal ─────────────────────────────────────────────────────────────────
+statement_date:
+  regex: "TODO"
+  format: "%d %b %Y"
+
+# payment_due_date:    if applicable
+#   regex: "TODO"
+#   format: "%d %b %Y"
+
+# ─── Balance anchors (every anchor that appears, in this doc kind) ──────────
+balance_anchors:
+  brought_forward: "TODO"
+  carried_forward: "TODO"
+  # opening / closing / previous / sub_total / total / grand_total / minimum_payment
+  # credit_limit / cash_limit / available_credit / total_due / net_pay
+
+# ─── Transaction table ───────────────────────────────────────────────────────
+tx_table:
+  columns: [DATE, DESCRIPTION, AMOUNT]    # adapt
+  date_format: "%d %b"
+  amount_sign:
+    suffix_CR: credit
+    default: debit
+
+tx_header_regex: "TODO"
+
+tx_types:
+  - "TODO type 1"
+  - "TODO type 2"
+
+# ─── Continuation-line carriers (the data Firefly drops) ────────────────────
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    # Use kinds from ../_meta_schema.yaml :: carrier_kinds[]
+    - kind: counterparty_name
+      pattern: "^([A-Z][A-Z\\s]+)$"
+      example: "TODO"
+
+# ─── Exclude lines (anchors that look like tx headers but aren't) ───────────
+exclude_lines:
+  - "^Page \\d+ of"
+  - "^TODO closing-balance line pattern"

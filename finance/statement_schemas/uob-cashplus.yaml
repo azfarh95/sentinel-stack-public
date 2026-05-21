@@ -1,0 +1,76 @@
+# UOB CashPlus (CashLine) / UOB Card statement schema
+# Single product family — UOB serves CashPlus (revolving line) + Personal Loan instalments
+# from the same statement.
+bank: UOB
+product: UOB CashPlus
+account_class: 2
+gl_account_code: "2122"      # UOB CashPlus liability
+currency: SGD
+
+filename_patterns:
+  - "UOB CL.*\\.pdf"
+  - "uob.*0\\d{3}\\.pdf"
+  - "UOB \\d{4}\\.pdf"
+
+header_markers:
+  - "CashPlus Statement"
+  - "United Overseas Bank Limited"
+
+account_number:
+  regex: "(\\d{3}-\\d{3}-\\d{3}-\\d)\\s"
+  example: "465-349-508-5"
+
+statement_period:
+  regex: "Period:\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+to\\s+(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+
+statement_date_from_period_end: true   # derive statement_date from period-end
+
+credit_limit:
+  regex: "SGD\\s+SGD\\s+SGD.*?Due Date.*?\\n.*?([\\d,]+\\.\\d{2})"
+
+minimum_payment:
+  regex: "Minimum Payment\\s.*?([\\d,]+\\.\\d{2})\\s+\\d{1,2}\\s+\\w{3}"
+
+payment_due_date:
+  regex: "Payment\\s+Due Date.*?(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+balance_anchors:
+  opening: "OPENING BALANCE\\s+([\\d,]+\\.\\d{2})(OD)?"
+  closing: "CLOSING BALANCE\\s+([\\d,]+\\.\\d{2})\\s*(OD)?"
+
+# UOB shows running balance with "OD" suffix for overdraft (i.e. utilised CashPlus).
+# OD means amount OWED. No OD suffix means CR (credit/no balance owed).
+balance_OD_means: debit_balance
+
+tx_table:
+  columns: [DATE, DESCRIPTION, DEBIT, CREDIT, BALANCE]
+  date_format: "%d %b"
+
+tx_header_regex: "^(\\d{1,2})\\s+(\\w{3})\\s+(.+?)(?:\\s+([\\d,]+\\.\\d{2}))?(?:\\s+([\\d,]+\\.\\d{2}))?(?:\\s+([\\d,]+\\.\\d{2}))?\\s*(OD)?$"
+
+tx_types:
+  - "Inward CR - GIRO"
+  - "Inward Credit-FAST"
+  - "Monthly Instalment"
+  - "OPENING BALANCE"
+  - "CLOSING BALANCE"
+
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    - kind: counterparty_name
+      pattern: "^([A-Z][A-Z\\s]+)$"
+      example: "AZFAR HAKIM BIN ABDU"
+    - kind: ref_type
+      pattern: "^OTHR\\s+(Other|Transfer)$"
+    - kind: si_marker
+      pattern: "^SI\\s+SI$"
+    - kind: instalment_descriptor
+      pattern: "^UOB PERSONAL LOAN INSTL\\s+(\\d+)/(\\d+)$"
+      example: "UOB PERSONAL LOAN INSTL 14/60"
+
+# UOB has a separate Personal Loan summary table — outstanding loan amount snapshot
+personal_loan_summary:
+  table_marker: "Outstanding Personal Loan Summary"
+  columns: [REF, APPROVED_DATE, REMAINING_INSTALMENTS, OUTSTANDING_LOAN_AMOUNT]

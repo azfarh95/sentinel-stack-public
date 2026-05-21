@@ -1,0 +1,83 @@
+# Standard Chartered Savings (SuperSalary Account) schema
+bank: Standard Chartered
+product: SuperSalary Account
+account_class: 1
+gl_account_code: "1115"
+currency: SGD
+
+filename_patterns:
+  - "Standard Chartered.*Savings.*\\.pdf"
+  - "eStatement_Standard Chartered.*\\.pdf"
+
+header_markers:
+  - "Statement of Account"
+  - "SUPERSALARY ACCOUNT"
+
+account_number:
+  regex: "(\\d{2}-\\d-\\d{6}-\\d)\\s+\\(SGD\\)"
+  example: "01-1-783334-7"
+
+statement_date:
+  regex: "Statement Date\\s*:\\s*(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+balance_anchors:
+  # SC SuperSalary closing balance row has 3 amounts: (Total deposits, Total
+  # withdrawals, Closing balance). Capture LAST one — the actual balance.
+  brought_forward: "BALANCE FROM PREVIOUS STATEMENT\\s+([\\d,]+\\.\\d{2})"
+  closing: "CLOSING BALANCE\\s+(?:[\\d,]+\\.\\d{2}\\s+){0,2}([\\d,]+\\.\\d{2})"
+
+tx_table:
+  # NOTE: SC uses DEPOSIT then WITHDRAWAL (reverse of POSB/Maybank). Column-position
+  # parser handles this automatically via header detection.
+  columns: [DATE, DESCRIPTION, DEPOSIT, WITHDRAWAL, BALANCE]
+  date_format: "%d %b %Y"
+
+tx_header_regex: "^(\\d{1,2}\\s+\\w{3}\\s+\\d{4})\\s+(.+?)(?:\\s+([\\d,]+\\.\\d{2}))?(?:\\s+([\\d,]+\\.\\d{2}))?(?:\\s+([\\d,]+\\.\\d{2}))?$"
+
+tx_types:
+  - "TRANSFER WITHDRAWAL NTRF"
+  - "INWARD CREDIT FEE"
+  - "IBFT"
+  - "INWARD CREDIT"
+  - "OUTWARD TT"
+  - "INWARD TT"
+  - "INTEREST"
+  - "CASHBACK"
+  - "SERVICE CHARGE"
+  - "ATM"
+  - "FAST"
+
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    # "TO CARD 5498341645008810" — payment to CC
+    - kind: to_card_routing
+      pattern: "^TO CARD (\\d{16})$"
+      example: "TO CARD 5498341645008810"
+    # IBFT routing string: "20260409DBSSSGSGBRT9201911" — date + bank-routing-code
+    - kind: ibft_routing
+      pattern: "^IBFT\\|(\\d{8}[A-Z]+\\d+)$"
+      example: "IBFT|20260409DBSSSGSGBRT9201911"
+    # Standalone routing identifier on a continuation line
+    - kind: dbs_swift_routing
+      pattern: "^\\d{8}(DBSSSGSG[A-Z0-9]+)$"
+      example: "20260409DBSSSGSGBRT9201911"
+    # Recipient name (after IBFT or transfer)
+    - kind: counterparty_name_with_pipe
+      pattern: "^([A-Z][A-Z\\s]+)\\|$"
+      example: "AZFAR HAKIM BIN ABDUL RAHMAN|"
+    # Hex/UUID-style ref (some SC tx have these)
+    - kind: hex_uuid_ref
+      pattern: "^([0-9A-F]{30,})$"
+      example: "29902D0CF7794FCEB2A01BCF6F912C10"
+    - kind: descriptor_other
+      pattern: "^(TRANSFER|Other)$"
+    - kind: card_number
+      pattern: "^(\\d{4}-?\\d{4}-?\\d{4}-?\\d{4})$"
+
+exclude_lines:
+  - "^Page \\d+ of"
+  - "^Deposit Insurance Scheme"
+  - "^Standard Chartered Bank"
+  - "^Explanation of Abbreviations"

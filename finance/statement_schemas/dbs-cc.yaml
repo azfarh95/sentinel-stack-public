@@ -1,0 +1,78 @@
+# DBS Credit Card statement schema
+bank: DBS
+product: DBS Live Fresh / DBS Visa Platinum (CC)
+account_class: 2  # liability
+gl_account_code: "2111"
+currency: SGD
+
+filename_patterns:
+  - "DBS CC.*\\.pdf"
+  - "Credit Cards Consolidated Statement.*\\.pdf"
+
+header_markers:
+  - "Credit Cards"
+  - "Statement of Account"
+  - "LIVE FRESH DBS"
+
+card_number:
+  regex: "CARD NO\\.\\s*:\\s*(\\d{4}\\s*\\d{4}\\s*\\d{4}\\s*\\d{4})"
+  # 4119 1101 0497 2424
+
+statement_date:
+  regex: "STATEMENT DATE\\s+CREDIT LIMIT.*?\\n\\s*(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+payment_due_date:
+  regex: "PAYMENT DUE DATE.*?\\n.*?(\\d{1,2}\\s+\\w{3}\\s+\\d{4})"
+  format: "%d %b %Y"
+
+credit_limit:
+  regex: "CREDIT LIMIT.*?\\$([\\d,]+\\.\\d{2})"
+
+minimum_payment:
+  regex: "MINIMUM PAYMENT.*?\\$([\\d,]+\\.\\d{2})"
+
+total_outstanding:
+  regex: "Total Outstanding Balance.*?\\$([\\d,]+\\.\\d{2})"
+
+balance_anchors:
+  previous: "PREVIOUS BALANCE\\s+([\\d,]+\\.\\d{2})"
+  total: "TOTAL:\\s+([\\d,]+\\.\\d{2})"
+  grand_total: "GRAND TOTAL FOR ALL CARD ACCOUNTS:\\s+([\\d,]+\\.\\d{2})"
+  sub_total: "SUB-TOTAL:\\s+([\\d,]+\\.\\d{2})"
+
+tx_table:
+  columns: [DATE, DESCRIPTION, AMOUNT]
+  date_format: "%d %b"      # day + 3-letter month, year from statement_date
+  amount_sign:
+    suffix_CR: credit       # "$56.58 CR" means payment to card (deduct from balance)
+    default: debit          # otherwise it's a charge
+
+tx_header_regex: "^(\\d{1,2})\\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\\s+(.+?)\\s+([\\d,]+\\.\\d{2})\\s*(CR)?$"
+# group 1=day, 2=month, 3=description, 4=amount, 5=CR if present
+
+# Continuation lines for CC are typically a single REF NO line
+continuation_lines:
+  preserve_all: true
+  known_carriers:
+    - kind: txn_ref
+      pattern: "^REF NO:\\s*(\\d+)$"
+    - kind: merchant_descriptor
+      # Most CC tx descriptions are inline on the header line, no continuation
+
+instalment_plans:
+  table_marker: "INSTALMENT PLANS SUMMARY"
+  columns: [PLAN, PRINCIPAL_AMT, INSTALMENT_MTHS, REMAINING, INSTALMENT, OUTSTANDING_AMT]
+  # e.g. "002MY PREFERRED PAYMENT PLAN24 $258.24 24 1 $10.76"
+
+bill_payment_indicators:
+  - "BILL PAYMENT - DBS INTERNET/WIRELESS"   # FAST payment to card from any source
+  - "BILL PAYMENT - DBS"
+
+instalment_indicators:
+  - "MY PREFERRED PAYMENT PLAN"              # Existing instalment line item
+  - "MY PREF PMT PLN - DEP TXN"              # New debt-consolidation instalment
+  - "MY PREF PMT PLN - DEP TXN FEE"          # Instalment processing fee
+  - "IL (60M)"                               # Personal Loan instalment
+
+finance_charge_indicator: "FINANCE CHARGES"
