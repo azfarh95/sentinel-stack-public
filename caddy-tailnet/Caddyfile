@@ -1,0 +1,85 @@
+# Tailnet HTTPS edge — one wildcard cert for every service.
+#
+# Reached via `tailscale serve --tcp=443 -> 127.0.0.1:8453` (raw TLS passthrough;
+# Caddy terminates TLS with the LE wildcard it holds). DNS-01 via Cloudflare, so
+# no public reachability + wildcard support. Add-a-service = one matcher + handle
+# block below, then `docker exec caddy-tailnet caddy reload --config /etc/caddy/Caddyfile`.
+#
+# See sentinel-watchdog/planning/tailnet-https.md.
+{
+	# ACME DNS-01 (Cloudflare) for ALL certs in this file — issues + auto-renews
+	# the *.svc.az-sentinel.xyz wildcard. Token is least-privilege (Zone:DNS:Edit
+	# + Zone:Read on az-sentinel.xyz only), injected from .env.local.
+	acme_dns cloudflare {env.CF_DNS01_TOKEN}
+	# DNS-01 only — no HTTP-01, no :80 redirect listener.
+	auto_https disable_redirects
+}
+
+https://*.svc.az-sentinel.xyz {
+	# Sentinel Finance (portfolio-mcp on the host)
+	@finance host finance.svc.az-sentinel.xyz
+	handle @finance {
+		reverse_proxy host.docker.internal:8086
+	}
+
+	# Sentinel Home backend (HA proxy + Google auth + presence)
+	@home host home.svc.az-sentinel.xyz
+	handle @home {
+		reverse_proxy host.docker.internal:8120
+	}
+
+	# Sentinel Defi dashboard (operator). HTTPS here lets wallet browsers (Rabby)
+	# load it — raw http://100.x:3001 is blocked as cleartext + isn't a secure
+	# context. The SPA is served same-origin; /api/* is stripped and proxied to the
+	# operator agent (:8000) so there's no split :8000 origin / cert mismatch.
+	@defi host defi.svc.az-sentinel.xyz
+	handle @defi {
+		handle_path /api/* {
+			reverse_proxy host.docker.internal:8000
+		}
+		handle {
+			reverse_proxy host.docker.internal:3001
+		}
+	}
+
+	# LibreTranslate (engine on the host :5050) — for the Sentinel Translate
+	# Keyboard (Android). Tailnet-only, so the open-by-default LibreTranslate API
+	# is reachable only by tailnet nodes (the phone), not the public internet.
+	@translate host translate.svc.az-sentinel.xyz
+	handle @translate {
+		reverse_proxy host.docker.internal:5050
+	}
+
+	# Sentinel Box Link — the phone's authenticated tailnet channel to the box
+	# (self-update version check now; MCP tools, Dove, hive later). Tailnet-only,
+	# so NOT behind Cloudflare Access — that's why in-app self-update rides this.
+	@boxlink host boxlink.svc.az-sentinel.xyz
+	handle @boxlink {
+		reverse_proxy host.docker.internal:8130
+	}
+
+	# Sentinel Browser Assistant — the gated :8108 surface's portable panel (/app),
+	# for the Volery in-app embed + any tailnet browser tab. Acting endpoints are
+	# X-Comet-Token + approval + kill-switch gated; /app + /health are open. (ADR AI-015)
+	@browser host browser.svc.az-sentinel.xyz
+	handle @browser {
+		reverse_proxy host.docker.internal:8108
+	}
+
+	# add-a-service template:
+	#   @smdl host smdl.svc.az-sentinel.xyz
+	#   handle @smdl { reverse_proxy host.docker.internal:8096 }
+
+	handle {
+		respond "unknown sentinel service" 404
+	}
+}
+
+# Vaultwarden (password manager) — moved OFF the public CF tunnel to TAILNET-ONLY
+# 2026-06-22 (access-path audit). CF Access OTP can't gate it without breaking the
+# Bitwarden browser/mobile clients (they sync via its API), so isolation = tailnet
+# membership instead. Same URL (vault.az-sentinel.xyz) → no client reconfig. Cert is
+# auto-issued via the zone-wide DNS-01 token in the global block above (not *.svc).
+https://vault.az-sentinel.xyz {
+	reverse_proxy host.docker.internal:8085
+}

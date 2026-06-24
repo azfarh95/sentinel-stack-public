@@ -1,0 +1,361 @@
+---
+# MetaMCP Tool Registry — Canonical Source of Truth
+# Generated: 2026-05-03
+# Phase: 1 (Foundation)
+# Total Tools: 8
+#
+# This file is the single source of truth for all MCP tool definitions.
+# Do NOT edit tool docstrings directly — update this file first, then regenerate docs.
+# Generated markdown guide: workspace/TOOL_DECISION_GUIDE.md
+
+tools:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Maps & Navigation
+  # ──────────────────────────────────────────────────────────────────────────
+
+  maps_directions:
+    id: maps_directions
+    service: maps-mcp
+    purpose: "Send Google Maps route with directions and inline Telegram button"
+    description: |
+      Sends a Google Maps directions link to Telegram with an inline button that opens
+      the route in the user's Google Maps app or browser. Supports Singapore postal codes,
+      street addresses, and place names. Travel modes: transit, driving, walking, cycling.
+
+    when_to_use:
+      - "User asks for route from location X to location Y"
+      - "User requests travel time between two places"
+      - "User asks for navigation / directions"
+      - "User wants to know how to get somewhere"
+      - "Postal code provided (e.g., 408694) as origin or destination"
+
+    when_not_to_use:
+      - "User is just searching for a place (use maps_search instead)"
+      - "User wants address details or business hours (use maps_search)"
+      - "General web search query (never fallback to Tavily)"
+      - "User asking for historical location data or map analysis"
+
+    params:
+      - name: origin
+        type: string
+        required: true
+        description: "Starting location: postal code (6 digits), street address, or place name"
+      - name: destination
+        type: string
+        required: true
+        description: "End location: postal code, street address, or place name"
+      - name: mode
+        type: string
+        required: false
+        default: "transit"
+        description: "Travel mode: 'transit' (MRT/bus), 'driving', 'walking', 'cycling'"
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID from the current message (passed by bot)"
+
+    example: "User: How do I get from Tampines 526497 to Orchard Road? → maps_directions(origin='526497', destination='Orchard Road', mode='transit', chat_id='123456')"
+
+    output: "Sends Telegram message with formatted address + clickable Google Maps button"
+
+  # ──────────────────────────────────────────────────────────────────────────
+
+  maps_search:
+    id: maps_search
+    service: maps-mcp
+    purpose: "Search for places/addresses on Google Maps and return results"
+    description: |
+      Searches Google Maps for locations matching the query. Returns place name, address,
+      and a clickable link. Useful for finding businesses, restaurants, landmarks, or
+      verifying addresses before sending directions.
+
+    when_to_use:
+      - "User searches for a place name (e.g., 'McDonald's near Orchard')"
+      - "User asks to find a business or landmark"
+      - "User wants to look up an address or verify location"
+      - "User asks 'Where is X?' or 'Find X for me'"
+
+    when_not_to_use:
+      - "User asking for route/directions (use maps_directions)"
+      - "User asking for travel time (use maps_directions)"
+      - "General web search that's not place-specific (use web search)"
+      - "User asking for hours, reviews, or detailed business info (web search better)"
+
+    params:
+      - name: query
+        type: string
+        required: true
+        description: "Place name, business, landmark, or address to search for"
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID from the current message (passed by bot)"
+
+    example: "User: Where can I find a good coffee shop in Tanjong Pagar? → maps_search(query='coffee shop Tanjong Pagar', chat_id='123456')"
+
+    output: "Sends Telegram message with search results and Google Maps links"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Video Downloads
+  # ──────────────────────────────────────────────────────────────────────────
+
+  download_video:
+    id: download_video
+    service: VideoDownloader (ytdlp-mcp)
+    purpose: "Download videos from 1000+ sites (YouTube, TikTok, Instagram, Telegram, etc.)"
+    description: |
+      Queue a video for download. Returns immediately with job_id. Download runs in background.
+      Supports quality selection (1080p, 720p, 480p, audio-only, best). Files saved to
+      G:/YT-DLP on host machine. Check progress with check_download(job_id).
+      If file already downloaded before, returns instantly from cache (no re-download).
+
+    when_to_use:
+      - "User shares a video URL and asks to download it"
+      - "User says 'save this video' or 'download this'"
+      - "User provides YouTube, TikTok, Instagram, or other video link"
+      - "User asks for audio-only download from music video"
+
+    when_not_to_use:
+      - "URL is not a video (use appropriate tool or web search)"
+      - "User asking for video info without download (use video_info)"
+      - "User wants to convert format post-download (not tool responsibility)"
+      - "File is >50MB and user has slow connection (warn, don't assume)"
+
+    params:
+      - name: url
+        type: string
+        required: true
+        description: "Video URL from YouTube, TikTok, Instagram, Telegram, or 1000+ other sites"
+      - name: quality
+        type: string
+        required: false
+        default: "1080p"
+        description: "Quality: '1080p', '720p', '480p', 'best', 'audio-only'"
+      - name: format
+        type: string
+        required: false
+        default: "mp4"
+        description: "Output format: 'mp4', 'webm', 'mp3', 'm4a'"
+      - name: filename
+        type: string
+        required: false
+        description: "Custom output filename (without extension)"
+      - name: cookies_file
+        type: string
+        required: false
+        description: "Cookie file for authentication (e.g., 'instagram', 'tiktok')"
+      - name: chat_id
+        type: string
+        required: false
+        description: "Telegram chat_id to auto-send file when done (requires telegram_mode='download+send')"
+
+    example: "User: Download this TikTok video at 720p → download_video(url='https://www.tiktok.com/video/...', quality='720p', format='mp4')"
+
+    output: "Returns job_id immediately. Poll check_download(job_id) for progress. Status: queued → downloading → done"
+
+  # ──────────────────────────────────────────────────────────────────────────
+
+  send_to_telegram:
+    id: send_to_telegram
+    service: VideoDownloader (ytdlp-mcp)
+    purpose: "Send a downloaded file to Telegram chat"
+    description: |
+      Send a file from download queue to Telegram. Detects file type (video, audio, document)
+      and sends via appropriate Telegram API endpoint. Max file size: 50 MB (Telegram limit).
+      Typically called after check_download() confirms file is ready.
+
+    when_to_use:
+      - "File is downloaded and user wants it in Telegram"
+      - "After check_download() shows status='done', send to user's chat"
+      - "User requests file delivery to specific Telegram chat"
+
+    when_not_to_use:
+      - "File doesn't exist or path is wrong (check first)"
+      - "File is >50 MB (Telegram bot API limitation)"
+      - "User didn't ask for file to be sent (only download on-demand)"
+
+    params:
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID to send file to (from incoming message)"
+      - name: filepath
+        type: string
+        required: true
+        description: "File path returned by check_download() (e.g., /downloads/video.mp4)"
+      - name: caption
+        type: string
+        required: false
+        description: "Optional caption/title shown under the media"
+      - name: bot_token
+        type: string
+        required: false
+        description: "Optional bot token override (defaults to TELEGRAM_BOT_TOKEN env var)"
+
+    example: "After download complete: send_to_telegram(chat_id='123456', filepath='/downloads/video.mp4', caption='Your downloaded video')"
+
+    output: "Sends file to Telegram. Returns ok=True with message_id on success, or error with reason if file too large or other issue"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Reminders & Scheduling
+  # ──────────────────────────────────────────────────────────────────────────
+
+  add_reminder:
+    id: add_reminder
+    service: reminders-mcp
+    purpose: "Create a scheduled reminder with title, due date, and time"
+    description: |
+      Create a reminder that will notify the user at a specified date and time via Telegram.
+      Returns reminder_id immediately. Scheduler runs in background. Reminders persist across
+      bot restarts. Timezone: Asia/Kuala_Lumpur (configurable).
+
+    when_to_use:
+      - "User says 'remind me to...' with a date/time"
+      - "User wants a scheduled notification for a task or event"
+      - "User asks to set a reminder for later today, tomorrow, or specific date"
+      - "User wants recurring reminders (check capability)"
+
+    when_not_to_use:
+      - "User just asking what time it is (not a reminder)"
+      - "User asking to cancel/modify existing reminder (use cancel_reminder or snooze_reminder)"
+      - "Indefinite/vague timing without clear due date (ask user for clarification)"
+
+    params:
+      - name: title
+        type: string
+        required: true
+        description: "Reminder message/task description (e.g., 'Call mom', 'Meeting at 3pm')"
+      - name: due_date
+        type: string
+        required: true
+        description: "Date in YYYY-MM-DD format (e.g., '2026-05-05')"
+      - name: due_time
+        type: string
+        required: true
+        description: "Time in HH:MM format, 24-hour (e.g., '14:30')"
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID to notify when reminder fires"
+      - name: timezone
+        type: string
+        required: false
+        default: "Asia/Kuala_Lumpur"
+        description: "Timezone for due_date/due_time interpretation"
+
+    example: "User: Remind me to call mom tomorrow at 3pm → add_reminder(title='Call mom', due_date='2026-05-04', due_time='15:00', chat_id='123456')"
+
+    output: "Returns reminder_id (UUID), confirmation message with scheduled time"
+
+  # ──────────────────────────────────────────────────────────────────────────
+
+  list_reminders:
+    id: list_reminders
+    service: reminders-mcp
+    purpose: "List all active reminders, sorted by due date"
+    description: |
+      Retrieve all pending/active reminders for the user. Shows reminder_id, title, due date/time,
+      and status (pending, completed, snoozed). Sorted by due date (nearest first).
+
+    when_to_use:
+      - "User asks 'what are my reminders?' or 'show me my tasks'"
+      - "User wants to see upcoming reminders"
+      - "User checking status of a reminder before modifying it"
+      - "User forgot what reminders they have scheduled"
+
+    when_not_to_use:
+      - "User asking to delete a reminder (use cancel_reminder)"
+      - "User asking to delay a reminder (use snooze_reminder)"
+      - "User asking to create a new reminder (use add_reminder)"
+
+    params:
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID to filter reminders for this user"
+
+    example: "User: What reminders do I have? → list_reminders(chat_id='123456')"
+
+    output: "List of reminders with id, title, due_date, due_time, status. Formatted as table or list."
+
+  # ──────────────────────────────────────────────────────────────────────────
+
+  cancel_reminder:
+    id: cancel_reminder
+    service: reminders-mcp
+    purpose: "Delete/cancel a reminder by ID"
+    description: |
+      Permanently delete a scheduled reminder. User must provide reminder_id
+      (from add_reminder result or list_reminders output). Cannot be undone.
+
+    when_to_use:
+      - "User says 'cancel that reminder' or 'delete reminder X'"
+      - "User no longer needs a scheduled reminder"
+      - "User asks to 'remove' or 'stop' a reminder"
+
+    when_not_to_use:
+      - "User wants to delay a reminder (use snooze_reminder instead)"
+      - "User wants to edit a reminder (cancel + re-add with new details)"
+      - "User unsure which reminder to cancel (list first with list_reminders)"
+
+    params:
+      - name: reminder_id
+        type: string
+        required: true
+        description: "UUID of the reminder to cancel (from add_reminder or list_reminders)"
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID (for permission verification)"
+
+    example: "User: Cancel that 3pm reminder → cancel_reminder(reminder_id='abc-123-def', chat_id='123456')"
+
+    output: "Confirmation that reminder was deleted. Cannot be undone."
+
+  # ──────────────────────────────────────────────────────────────────────────
+
+  snooze_reminder:
+    id: snooze_reminder
+    service: reminders-mcp
+    purpose: "Delay a reminder by N minutes/hours/days"
+    description: |
+      Postpone an active reminder without deleting it. User specifies how long to delay
+      (e.g., '15 minutes', '2 hours', '1 day'). Reminder will fire at new time.
+      Useful for 'remind me later' scenarios.
+
+    when_to_use:
+      - "User says 'remind me in 15 minutes' (for existing reminder)"
+      - "User wants to postpone a reminder firing"
+      - "User asks to 'snooze' a notification"
+      - "User wants delay without deleting the reminder"
+
+    when_not_to_use:
+      - "User wants to cancel reminder entirely (use cancel_reminder)"
+      - "Creating a new reminder (use add_reminder)"
+      - "User wants to set exact time, not duration (use cancel + re-add)"
+
+    params:
+      - name: reminder_id
+        type: string
+        required: true
+        description: "UUID of the reminder to snooze"
+      - name: delay_value
+        type: integer
+        required: true
+        description: "Number of units to delay (e.g., 15 for 15 minutes)"
+      - name: delay_unit
+        type: string
+        required: true
+        description: "Unit of delay: 'minutes', 'hours', or 'days'"
+      - name: chat_id
+        type: string
+        required: true
+        description: "Telegram chat ID (for permission verification)"
+
+    example: "User: Snooze that reminder for 30 minutes → snooze_reminder(reminder_id='abc-123', delay_value=30, delay_unit='minutes', chat_id='123456')"
+
+    output: "Confirmation with new scheduled time. Reminder will fire at updated time."
+
+---
+# End of mcp-tools.yaml

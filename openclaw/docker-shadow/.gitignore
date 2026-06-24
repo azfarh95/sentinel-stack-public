@@ -1,0 +1,4 @@
+# Shadow validation artifacts — never commit (seed holds a local api-key + state)
+seed/
+*.log
+*.tgz

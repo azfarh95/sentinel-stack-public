@@ -1,0 +1,38 @@
+# Phase 2 — copy this into EACH sentinel-* repo as
+# .github/workflows/notify-docs.yml
+#
+# Fires a repository_dispatch event at azfarh95/sentinel-docs on every push
+# to main. sentinel-docs receives the event and re-runs its deploy workflow,
+# which re-pulls docs/ from all configured repos and rebuilds the site.
+#
+# Prerequisite (one-time, per-repo):
+#   gh secret set DOCS_DISPATCH_TOKEN -R azfarh95/<this-repo> --body "<PAT>"
+#
+# Where <PAT> is a fine-grained personal access token scoped to
+# azfarh95/sentinel-docs with:
+#   - Contents: read
+#   - Actions:  write
+#
+# You can use one PAT across all sentinel-* repos.
+
+name: Notify sentinel-docs
+
+on:
+  push:
+    branches: [master]
+    paths:
+      # Only fire if docs/ or .sentinel.yaml changed — saves Action minutes
+      - 'docs/**'
+      - '.sentinel.yaml'
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch rebuild
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DOCS_DISPATCH_TOKEN }}
+          repository: azfarh95/sentinel-docs
+          event-type: rebuild
+          client-payload: '{"source_repo": "${{ github.repository }}", "ref": "${{ github.sha }}"}'

@@ -1,0 +1,8 @@
+flask
+pyotp
+qrcode
+keyring
+websocket-client
+telethon
+webauthn>=2.7,<3
+pywebpush

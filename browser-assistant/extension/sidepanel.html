@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sentinel Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="ba-header">
+    <div class="ba-title"><span class="ba-logo">🌐</span><span>Sentinel Assistant</span></div>
+    <div class="ba-status" id="ba-status">
+      <span class="ba-dot" id="ba-dot"></span>
+      <span id="ba-status-text">connecting…</span>
+    </div>
+  </header>
+
+  <nav class="ba-tabs" id="ba-tabs">
+    <button class="ba-tab active" data-mode="browse" type="button">🌐 Browse</button>
+    <button class="ba-tab" data-mode="shop" type="button">🛒 Shop</button>
+  </nav>
+
+  <main class="ba-log" id="ba-log" aria-live="polite">
+    <div class="ba-empty" id="ba-empty">
+      <p id="ba-empty-lead">Give the agent a task. It runs in a local browser and asks before it clicks or types.</p>
+      <ul id="ba-examples"></ul>
+    </div>
+  </main>
+
+  <footer class="ba-input">
+    <div class="ba-opts" id="ba-browse-opts">
+      <label class="ba-opt" title="Headless = isolated throwaway browser. My Comet = attach your real, logged-in browser (launch it with CDP first).">
+        <span>Target</span>
+        <select id="ba-target">
+          <option value="headless" selected>Headless (isolated)</option>
+          <option value="comet">My Comet (live tabs)</option>
+        </select>
+      </label>
+      <label class="ba-opt ba-check" title="Screenshots — only helps on DOM-blind pages; slower.">
+        <input type="checkbox" id="ba-vision" /> <span>Vision</span>
+      </label>
+    </div>
+    <textarea id="ba-task" rows="2"
+      placeholder="Describe a task…  (Shift+Enter for newline, Enter to run)" autofocus></textarea>
+    <div class="ba-controls">
+      <span class="ba-meta" id="ba-meta"></span>
+      <button id="ba-run" type="button">Run</button>
+    </div>
+  </footer>
+
+  <!-- config.local.js (extension only; gitignored) sets window.COMET_BRIDGE_TOKEN.
+       When served from :8108 it 404s harmlessly — the app then uses ?token= / localStorage. -->
+  <script src="config.local.js"></script>
+  <script src="sidepanel.js" type="module"></script>
+</body>
+</html>

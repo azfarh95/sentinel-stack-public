@@ -1,0 +1,57 @@
+{
+  "// owner_chat_id":           "Numeric Telegram chat ID of the bot's owner. Files saved to owner-style paths only for this chat. Get yours by DMing @userinfobot.",
+  "owner_chat_id":               123456789,
+
+  "// allowed_chat_ids":         "If non-empty, bot ignores messages from any chat NOT in this list. Use to lock the bot to specific people/groups. Leave [] to allow everyone.",
+  "allowed_chat_ids":            [],
+
+  "// default_quality":          "Default video resolution cap for non-live downloads (TikTok, YouTube videos, IG, etc.). Per-chat overrides via /default_video_size. Accepted: 'best' / '1080p' / '720p' / '360p' / 'audio-only'.",
+  "default_quality":             "1080p",
+
+  "// max_concurrent_downloads": "Semaphore for parallel jobs. Higher = faster bulk but more bandwidth + disk contention.",
+  "max_concurrent_downloads":    2,
+
+  "// delete_after_send":        "If true, deletes the local file after successful Telegram send. Saves disk for bots used purely as a relay; leave false if you want a local archive.",
+  "delete_after_send":           false,
+
+  "// temp_ttl_hours":           "Cleanup interval for /downloads/temp/ (used for allowed-chat downloads). Files older than this get reaped.",
+  "temp_ttl_hours":              24,
+
+  "// ── Livestream recording ── ": "",
+  "// live_enabled":             "Master switch. If false, live URLs return 'live recording disabled'.",
+  "live_enabled":                true,
+
+  "// live_max_concurrent":      "Per-host cap on simultaneous live recordings. Higher = more parallel streams but more CPU/bandwidth.",
+  "live_max_concurrent":         1,
+
+  "// live_heartbeat_seconds":   "Hint for how often yt-dlp's progress hook emits. A separate 60s timer-based reporter ALSO updates the UI from disk, so progress is visible regardless.",
+  "live_heartbeat_seconds":      300,
+
+  "// live_min_free_disk_gb":    "Refuse to start a live recording if free disk is below this. Prevents fill-the-disk surprises on multi-hour streams.",
+  "live_min_free_disk_gb":       10,
+
+  "// live_abort_on_session_fail": "Zero-retry on auth/cookie failures. Recommended true — retrying a failed cookie wastes hours.",
+  "live_abort_on_session_fail":  true,
+
+  "// live_platforms":           "Advisory only. Any URL with a yt-dlp extractor is allowed; this list is just for labelling.",
+  "live_platforms":              ["youtube", "twitch", "kick"],
+
+  "// live_max_height":          "Resolution cap for live recordings. Trades file size for quality. 1080p60 ≈ 56 MB/min, 720p60 ≈ 25 MB/min, 480p ≈ 12 MB/min. 0 = unlimited (source quality).",
+  "live_max_height":             720,
+
+  "// live_transcode_height":    "Optional post-recording re-encode. 0 = off. 480 or 240 = re-encode after finalize. CPU-expensive on long recordings.",
+  "live_transcode_height":       0,
+
+  "// live_transcode_keep_original": "If true, the original is kept alongside the transcoded sibling (archive + small-for-delivery). If false, transcode replaces original.",
+  "live_transcode_keep_original": false,
+
+  "// ── Stream monitor ── ":    "",
+  "// monitor_enabled":          "Master switch for the polling loop that watches /watch-list URLs and DMs you when they go live.",
+  "monitor_enabled":             true,
+
+  "// monitor_poll_interval_seconds": "How often the watchlist is probed. Lower = faster live detection, higher API cost on the watched sites.",
+  "monitor_poll_interval_seconds": 300,
+
+  "// monitor_probe_timeout_seconds": "Max wait for a yt-dlp probe before treating the entry as offline.",
+  "monitor_probe_timeout_seconds": 30
+}

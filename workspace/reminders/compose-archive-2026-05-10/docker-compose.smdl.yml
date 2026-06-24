@@ -1,0 +1,32 @@
+services:
+  smdl:
+    build:
+      context: ./smdl
+      dockerfile: Dockerfile
+    container_name: smdl
+    restart: unless-stopped
+    user: "0:0"
+    env_file:
+      - .env.local
+    ports:
+      - "127.0.0.1:8096:8096"
+    environment:
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      CONFIG_FILE: /config/smdl.json
+    volumes:
+      - "G:/YT-DLP:/downloads"
+      - "G:/YT-DLP/cookies:/cookies"
+      - "./smdl/config:/config"
+      - smdl_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  smdl_data:
+    driver: local

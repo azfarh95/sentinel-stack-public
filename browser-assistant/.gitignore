@@ -1,0 +1,14 @@
+.venv/
+_install.log
+_chrome_profile/
+__pycache__/
+# transient run outputs (P0-P1d harness)
+_*.log
+runs.jsonl
+
+# P4.5 runtime markers
+browser_turns.jsonl
+.browser_disabled
+
+# extension local token (P6+ side panel)
+extension/config.local.js

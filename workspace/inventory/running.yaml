@@ -1,0 +1,251 @@
+# Auto-generated — do not edit. Regenerate via scripts/refresh_inventory.py
+snapshot_at_utc: "2026-05-09T17:38:08+00:00"
+snapshot_at_local: "2026-05-10T01:38:08+08:00"
+summary:
+  docker_count: 24
+  lm_models_loaded: 1
+  native_process_count: 7
+docker_containers:
+  - name: metamcp
+    image: "ghcr.io/metatool-ai/metamcp:latest"
+    uptime: About a
+    health: unknown
+    ports: "127.0.0.1:12008->12008/tcp"
+  - name: github-mcp
+    image: ghcr.io/github/github-mcp-server
+    uptime: About a
+    health: unknown
+    ports: "127.0.0.1:8091->8091/tcp"
+  - name: ytdlp-mcp
+    image: metamcp-local-ytdlp-mcp
+    uptime: 6 hours
+    health: healthy
+    ports: "127.0.0.1:8088->8088/tcp"
+  - name: claude-assistant-testbot
+    image: claudeassistant-testbot
+    uptime: 16 hours
+    health: healthy
+    ports: "127.0.0.1:8097->8097/tcp"
+  - name: claude-assistant-testlogger
+    image: claudeassistant-testlogger
+    uptime: 16 hours
+    health: healthy
+    ports: "127.0.0.1:8190->8099/tcp"
+  - name: smdl
+    image: metamcp-local-smdl
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:8096->8096/tcp"
+  - name: translate-mcp
+    image: metamcp-local-translate-mcp
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:8094->8094/tcp"
+  - name: google-workspace-mcp
+    image: metamcp-local-google-workspace-mcp
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:8089->8089/tcp"
+  - name: onedrive-mcp
+    image: metamcp-local-onedrive-mcp
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:8093->8093/tcp"
+  - name: metamcp-pg
+    image: "postgres:16-alpine"
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:9433->5432/tcp"
+  - name: libretranslate
+    image: "libretranslate/libretranslate:latest"
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:5050->5000/tcp"
+  - name: reminders-mcp
+    image: metamcp-local-reminders-mcp
+    uptime: 23 hours
+    health: healthy
+    ports: "127.0.0.1:8087->8087/tcp"
+  - name: memory-mcp
+    image: metamcp-local-memory-mcp
+    uptime: 42 hours
+    health: healthy
+    ports: "127.0.0.1:8092->8092/tcp"
+  - name: maps-mcp
+    image: metamcp-local-maps-mcp
+    uptime: 42 hours
+    health: unknown
+    ports: "127.0.0.1:8090->8090/tcp"
+  - name: ark-rcon-manager
+    image: default-ark-rcon
+    uptime: 3 days
+    health: unknown
+    ports: "0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp"
+  - name: ark-survival-evolved
+    image: "turzam/ark:latest"
+    uptime: 3 days
+    health: unknown
+    ports: "0.0.0.0:7777-7778->7777-7778/udp, [::]:7777-7778->7777-7778/udp, 0.0.0.0:27015->"
+  - name: crib-power-monitor
+    image: crib-watchdog-power-monitor
+    uptime: 28 hours
+    health: unhealthy
+    ports: ""
+  - name: crib-telegram-bot
+    image: crib-watchdog-telegram-bot
+    uptime: 3 days
+    health: healthy
+    ports: ""
+  - name: crib-wol
+    image: crib-watchdog-wol
+    uptime: 3 days
+    health: healthy
+    ports: 5000/tcp
+  - name: crib-nginx
+    image: "nginx:alpine"
+    uptime: 3 days
+    health: unknown
+    ports: "0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:443->443/tcp, [::]:443->443/tcp"
+  - name: crib-automation
+    image: crib-watchdog-automation-service
+    uptime: 3 days
+    health: healthy
+    ports: ""
+  - name: crib-home-assistant
+    image: "ghcr.io/home-assistant/home-assistant:latest"
+    uptime: 3 days
+    health: unknown
+    ports: "0.0.0.0:8123->8123/tcp, [::]:8123->8123/tcp"
+  - name: crib-postgres
+    image: "postgres:15-alpine"
+    uptime: 3 days
+    health: healthy
+    ports: 5432/tcp
+  - name: crib-redis
+    image: "redis:7-alpine"
+    uptime: 3 days
+    health: healthy
+    ports: 6379/tcp
+lm_studio_loaded:
+  - model: qwen/qwen3.6-27b
+    context: 131072
+    parallel: 4
+    status: idle
+    vision: true
+    tools: true
+native_processes:
+  - name: python.exe
+    pid: 3196
+    script: tray_monitor.py
+  - name: python.exe
+    pid: 23220
+    script: memory.exe
+  - name: python.exe
+    pid: 38664
+    script: infer_bridge.py
+  - name: node.exe
+    pid: 19464
+    script: playwright-mcp-proxy.js
+  - name: pythonw.exe
+    pid: 40540
+    script: watchdog.py
+  - name: python.exe
+    pid: 19180
+    script: bridge.py
+  - name: python.exe
+    pid: 15336
+    script: refresh_inventory.py
+listening_ports:
+  - port: 1234
+    addr: "127.0.0.1:1234"
+    pid: 33716
+  - port: 8095
+    addr: "127.0.0.1:8095"
+    pid: 38664
+  - port: 8098
+    addr: "127.0.0.1:8098"
+    pid: 19180
+  - port: 8099
+    addr: "127.0.0.1:8099"
+    pid: 40540
+  - port: 8932
+    addr: "127.0.0.1:8932"
+    pid: 19464
+  - port: 9222
+    addr: "127.0.0.1:9222"
+    pid: 30532
+  - port: 9510
+    addr: "127.0.0.1:9510"
+    pid: 25772
+  - port: 9512
+    addr: "0.0.0.0:9512"
+    pid: 25772
+  - port: 12434
+    addr: "127.0.0.1:12434"
+    pid: 26856
+scheduled_tasks:
+  - name: AIStack-Backup-Full
+    state: 3
+  - name: AIStack-Backup-Lean
+    state: 3
+  - name: PCDSystemTray_bundleots_retail
+    state: 1
+  - name: Playwright MCP Watcher
+    state: 3
+  - name: Sentinel Watchdog
+    state: 3
+  - name: Watchdog Tray Monitor
+    state: 3
+  - name: Hard Disk Sentinel_azfar
+    state: 1
+  - name: MareBackup
+    state: 3
+  - name: Backup
+    state: 3
+  - name: BackupNonMaintenance
+    state: 3
+  - name: Backup
+    state: 3
+  - name: RegIdleBackup
+    state: 3
+metamcp:
+  namespaces: 2
+  STDIO: 6
+  STREAMABLE_HTTP: 8
+  SSE: 1
+wsl_services:
+  - unit: ""
+    desc: ""
+script_counts:
+  scripts:
+    .py: 18
+    .ps1: 15
+    .sh: 2
+    .js: 1
+    .bat: 6
+    .log: 7
+    .backup: 1
+    .original: 1
+    .patched: 1
+    .pyc: 5
+  sentinel-miniapp-v2:
+    .py: 3
+    .txt: 2
+    .md: 1
+    .db: 1
+    .db-shm: 1
+    .db-wal: 1
+    .json: 1
+    .html: 2
+    .pyc: 3
+    .css: 1
+    .js: 1
+  watchdog:
+    .txt: 2
+    .json: 3
+    .py: 3
+    .db: 1
+    .ps1: 2
+    .md: 1
+    .pyc: 2
+    .sample: 14

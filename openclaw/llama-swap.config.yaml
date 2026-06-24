@@ -1,0 +1,68 @@
+# llama-swap — Qwen lane (hybrid: llama-swap owns the LLM lane's on-demand
+# load + TTL idle-unload; the watchdog GPU broker owns cross-consumer policy).
+#
+# Model id MUST stay "qwen/qwen3.6-27b" — infer-bridge (:8095) rewrites every
+# request's `model` field to this and resolves it against /v1/models. The cmd is
+# a verbatim wrap of run_llama_server.bat. LOCKED config (ADR AI-002/AI-005):
+# -fa on -c 65536 -np 1 -ctk/-ctv q8_0  @ ~22.23 GB on the RX 7900 XTX.
+# ⚠ 2026-06-15: REVERTED the brief f16/-c 32768 experiment back to this locked
+# config. The f16 switch was a MISTAKE built on a contaminated measurement: a
+# clean A/B at raw :1234 (warm weights, cold prefix, 7.5k-token prompt) showed
+# f16 cold prefill = ~38 tok/s vs q8_0 ~130 tok/s. Symmetric q8_0/q8_0 KV keeps
+# the FUSED flash-attention kernel on RDNA3/HIP (upstream llama.cpp #22411);
+# f16 falls OFF the fused path and is ~3.4x SLOWER here. KV quant is NOT a speed
+# regression — it's the fast path. (The earlier "q8_0 = 60 tok/s" reading was
+# -np 1 slot contention, not the KV format.) -c 65536 also restores 2x the prompt
+# budget that -c 32768 had cut (multi-step tool turns were overflowing).
+# Backend port is the ${PORT} macro (auto from startPort);
+# llama-swap's own listen port is set on the CLI (--listen), not here.
+#
+# ADR AI-002 note: the contextTokens autosync no longer derives n_ctx from live
+# /props (bare /props doesn't route through llama-swap, and TTL-unload makes it
+# intermittent) — it is PINNED to 65536. /props remains reachable for debugging
+# at /upstream/qwen%2Fqwen3.6-27b/props.
+
+startPort: 5800
+
+# Qwen cold-load (16 GB weights + mmproj + 65536 KV @ q8 + fa) runs ~95-180s
+# depending on OS disk cache — well past llama-swap's 120s default, which 500'd
+# the load mid-flight. 360s gives comfortable headroom for a cold-disk load.
+healthCheckTimeout: 360
+
+models:
+  "qwen/qwen3.6-27b":
+    # ttl: idle-unload after 30 min with no requests (frees ~22 GB for gaming/
+    # FLUX). The broker also unloads explicitly on game-start; ttl is the
+    # auto-free safety for un-detected idle. Tunable — keep > the cold-reload
+    # cost (~93 s) so scheduled agent tasks don't thrash.
+    ttl: 1800
+    # Force-kill the process TREE on stop/evict/TTL. llama-swap's default Windows
+    # stop is `taskkill` WITHOUT /F, which can't kill a hung (load-timed-out)
+    # llama-server → it logged `stop signal failed: exit status 128` and the stuck
+    # process squatted RAM/VRAM. /F /T force-kills the tree. ${PID} = the upstream
+    # llama-server pid (macro verified present in the v224 binary). (gpu-broker
+    # hardening #9, 2026-06-14)
+    cmdStop: "taskkill /F /T /PID ${PID}"
+    cmd: |
+      C:\Users\azfar\llama.cpp\hip\llama-server.exe
+      --model C:\Users\azfar\.lmstudio\models\lmstudio-community\Qwen3.6-27B-GGUF\Qwen3.6-27B-Q4_K_M.gguf
+      --mmproj C:\Users\azfar\.lmstudio\models\lmstudio-community\Qwen3.6-27B-GGUF\mmproj-Qwen3.6-27B-BF16.gguf
+      --host 127.0.0.1 --port ${PORT}
+      -ngl 99 -c 65536 -np 1 -fa on -ctk q8_0 -ctv q8_0
+      --image-min-tokens 1024 --image-max-tokens 8192
+      --jinja
+    env:
+      - "HSA_OVERRIDE_GFX_VERSION=11.0.0"
+      - 'LLAMA_ARG_CHAT_TEMPLATE_KWARGS={"enable_thinking": false}'
+    proxy: "http://127.0.0.1:${PORT}"
+
+# Warm Qwen at startup so the first scheduled OpenClaw cron job (and the owner's
+# first prompt) hits a resident model instead of a ~3.5-min cold load — which was
+# surfacing as 33× `model discovery failed (404)` + OpenClaw's hard 180s embedded
+# timeout aborting cold loads that would have succeeded. The broker still evicts
+# Qwen on demand for gaming/FLUX, and ttl(1800s) still idle-unloads; preload only
+# sets the warm DEFAULT. (gpu-broker hardening #10, 2026-06-14)
+hooks:
+  on_startup:
+    preload:
+      - "qwen/qwen3.6-27b"

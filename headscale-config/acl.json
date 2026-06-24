@@ -1,0 +1,71 @@
+{
+  // Phase 1 ACL — owner only. No outsiders. No friend tunnel. Friend access
+  // lives in a separate AmneziaWG stack (Phase 3).
+  // NOTE: headscale 0.27+ strict policy validation REJECTS unknown object fields,
+  // so documentation must be HuJSON // comments, NOT "_comment_*" keys.
+
+  "groups": {
+    "group:owner": ["azfar@"]
+  },
+
+  // Infra nodes carry a tag, which moves their ACL identity from the user
+  // (azfar@ / group:owner) to the tag. That's deliberate: tagged nodes are
+  // long-lived servers (no key expiry) and are reached via the tag:home-server
+  // dst rule below, not the personal-device group:owner rule. Personal devices
+  // (phone, tablet) stay UN-tagged so they remain group:owner.
+  //   tag:home-server — the Windows host (services + subnet router + exit) and
+  //                     the WSL router (dormant subnet-route fallback).
+  //   tag:exit        — a dedicated exit node (sentinel-pia-exit).
+  "tagOwners": {
+    "tag:home-server": ["group:owner"],
+    "tag:owner-device": ["group:owner"],
+    "tag:exit": ["group:owner"]
+  },
+
+  // Owner devices that advertise the home LAN subnet or an exit node get
+  // auto-approved — no manual approve step on (re)connect. The approver lists
+  // include the infra TAGS as well as group:owner, so a node still
+  // auto-approves after it is tagged (a tagged node is no longer group:owner).
+  "autoApprovers": {
+    "exitNode": ["group:owner", "tag:home-server", "tag:exit"],
+    "routes": {
+      "192.168.50.0/24": ["group:owner", "tag:home-server"]
+    }
+  },
+
+  "acls": [
+    {
+      // Owner devices can reach the home server on any port.
+      "action": "accept",
+      "src":    ["group:owner"],
+      "dst":    ["tag:home-server:*"]
+    },
+    {
+      // Owner devices can talk to each other (e.g. phone <-> laptop).
+      "action": "accept",
+      "src":    ["group:owner"],
+      "dst":    ["group:owner:*"]
+    },
+    {
+      // Owner devices can route to the internet through an owner exit node
+      // (sentinel-host / sentinel-pia-exit). Without this, selecting an exit
+      // node yields no internet — the client drops egress traffic at the ACL.
+      "action": "accept",
+      "src":    ["group:owner"],
+      "dst":    ["autogroup:internet:*"]
+    },
+    {
+      // Owner devices can reach the home LAN (printer, NAS, etc.) via the subnet
+      // route. autogroup:internet excludes RFC1918, so the private subnet needs
+      // its own rule.
+      "action": "accept",
+      "src":    ["group:owner"],
+      "dst":    ["192.168.50.0/24:*"]
+    }
+  ],
+
+  "ssh": []
+
+  // Anything not matched above is denied. A future friend account would NOT be
+  // in group:owner, so it is rejected from home-server traffic by default.
+}

@@ -1,0 +1,93 @@
+# Headscale config — Phase 1 (loopback only, pre-domain)
+# Phase 2 will add: real server_url with HTTPS, TLS via reverse proxy,
+# OIDC if you want it. For now: HTTP on 127.0.0.1, suitable for local-only use.
+
+# ── Identity ───────────────────────────────────────────────────────────────
+# server_url is what clients use to reach the coordination server.
+# Phase 2 (2026-05-10): public HTTPS via Cloudflare Tunnel ingress at
+# headscale.your-domain.example.com:8443 -> Caddy TLS edge (caddy-headscale) -> :8080.
+# Caddy terminates TLS directly, BYPASSING Cloudflare (CF strips the TS2021
+# Upgrade header). The :8443 is mandatory — WAN 443 is held by the router, so
+# control is served on 8443 and every client must use the explicit port.
+server_url: https://headscale.your-domain.example.com:8443
+
+# Address Headscale binds to (matches docker-compose port mapping).
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+# Used to generate per-node URLs (e.g. node1.tail.your-domain.example.com).
+# Must NOT collide with hostnames you serve elsewhere — using `tail` subdomain
+# under your existing root domain so it lives in the same DNS zone.
+base_domain: tail.your-domain.example.com
+
+# Tailnet IP ranges — fixed defaults that match Tailscale's reserved space.
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# DERP (relay). Self-hosted embedded relay for NAT traversal off-LAN, so the
+# tailnet does not depend on Tailscale's relay infrastructure.
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: "home"
+    region_name: "Sentinel Home DERP"
+    # STUN for NAT traversal. REQUIRES a router port-forward:
+    #   WAN UDP 3478 -> this host UDP 3478 (published by docker-compose).
+    stun_listen_addr: "0.0.0.0:3478"
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    # Embedded region (999) is auto-added to the DERP map served to clients.
+    # Its HTTPS relay is reached via server_url (headscale.your-domain.example.com:8443).
+    automatically_add_embedded_derp_region: true
+  # Tailscale's public DERP kept as FALLBACK during the SaaS->headscale cutover
+  # so off-LAN devices are never stranded. For FULL Tailscale-infra decoupling,
+  # set `urls: []` once `tailscale netcheck` confirms region 999 is reachable
+  # from outside the home network.
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: true
+  update_frequency: 24h
+
+# ── Storage ────────────────────────────────────────────────────────────────
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+
+# Pre-shared key + private key file paths (auto-generated on first run).
+private_key_path: /var/lib/headscale/private.key
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+# ── DNS ────────────────────────────────────────────────────────────────────
+dns:
+  override_local_dns: false
+  magic_dns: true
+  base_domain: tail.your-domain.example.com
+  # Upstream resolvers used by clients while connected to the tailnet.
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 9.9.9.9
+  search_domains: []
+
+# ── ACL policy ─────────────────────────────────────────────────────────────
+# Path inside container; we mount headscale-config -> /etc/headscale.
+policy:
+  mode: file
+  path: /etc/headscale/acl.json
+
+# ── Misc ───────────────────────────────────────────────────────────────────
+ephemeral_node_inactivity_timeout: 30m
+node_update_check_interval: 10s
+
+# Disable the legacy CLI/API gRPC channel — only use unix socket on disk.
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+# Default log level — bump to debug while shaking out Phase 1 issues.
+log:
+  format: text
+  level: info

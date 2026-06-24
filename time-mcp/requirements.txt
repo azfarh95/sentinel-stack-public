@@ -1,0 +1,6 @@
+fastapi>=0.104.0
+fastmcp>=0.5.0
+uvicorn>=0.24.0
+starlette>=0.36.0
+# zoneinfo needs the IANA tz database; python:slim ships without it.
+tzdata>=2024.1

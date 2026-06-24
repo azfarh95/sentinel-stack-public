@@ -1,0 +1,116 @@
+# Raid Scope — repos to monitor when user says "raid github"
+#
+# Handler: Claude Code (this file is read/written from Claude Code chat,
+# not Sentinel). Sentinel is reserved for benchmarking tasks only — not
+# upstream-watch / synthesis / multi-step reasoning.
+#
+# Trigger phrases (typed to Claude Code):
+#   "raid github"               → run raid against `default_scope` below
+#   "expand scope into <name>"  → append a new entry to default_scope, then save
+#   "remove <name> from scope"  → drop the entry by `name`
+#   "show raid scope"           → print this file
+#
+# Implementation: Claude Code uses `gh` CLI via Bash tool to fetch
+# release/commits/issues for each entry, then synthesizes a grouped report.
+# Keep YAML keys stable (`name`, `repo`, `why`, `category`, `watch`).
+
+# ── Defaults ──────────────────────────────────────────────────────────────────
+# Each `watch` entry tells the agent which feeds to pull on a raid:
+#   release        — latest GitHub release (tag, body, date)
+#   commits        — commits in the last 14 days, summarized
+#   issues_open    — top N open issues with "security", "breaking", "regression" labels
+#   issues_closed  — recently-closed issues (last 14 days), high-signal ones only
+#   discussions    — pinned/active GitHub Discussions
+
+default_watch: [release, commits, issues_open]
+
+# ── Scope ────────────────────────────────────────────────────────────────────
+default_scope:
+  - name: yt-dlp
+    repo: yt-dlp/yt-dlp
+    category: media
+    why: powers SMDL MCP + SMDL (s.) — biggest churn affects video downloads
+    watch: [release, commits, issues_open]
+
+  - name: gallery-dl
+    repo: mikf/gallery-dl
+    category: media
+    why: Instagram/photo fallback in SMDL — supplements yt-dlp
+    watch: [release, commits]
+
+  - name: openclaw
+    repo: openclaw/openclaw
+    category: runtime
+    why: agent runtime in WSL2 — version 2026.5.6 in production
+    watch: [release, commits, issues_open]
+
+  - name: Qwen3
+    repo: QwenLM/Qwen3
+    category: model
+    why: local inference model family — Qwen 3.6 27B is fallback engine
+    watch: [release, commits]
+
+  - name: MetaMCP
+    repo: metatool-ai/metamcp
+    category: agent_infra
+    why: tool orchestrator — every MCP call routes through it
+    watch: [release, commits, issues_open]
+
+  - name: LibreTranslate
+    repo: LibreTranslate/LibreTranslate
+    category: agent_infra
+    why: powers translate-mcp wrapper at :8094
+    watch: [release]
+
+  - name: github-mcp-server
+    repo: github/github-mcp-server
+    category: mcp_server
+    why: official GitHub MCP — Sentinel uses it for repo/PR/issue access
+    watch: [release, commits]
+
+  - name: mcp-python-sdk
+    repo: modelcontextprotocol/python-sdk
+    category: agent_infra
+    why: FastMCP foundation for our reminders/maps/onedrive/etc. servers
+    watch: [release]
+
+  - name: playwright-mcp
+    repo: microsoft/playwright-mcp
+    category: mcp_server
+    why: browser automation MCP at :8931
+    watch: [release]
+
+  - name: tavily
+    repo: tavily-ai/tavily-mcp
+    category: mcp_server
+    why: web search MCP — second-most-called tool
+    watch: [release]
+
+  - name: Claude Code
+    repo: anthropics/claude-code
+    category: ai
+    why: |
+      Watching for remote-control / Telegram relay / mobile features.
+      Decided on 2026-05-10 to NOT build a custom Path-B Claude Code session
+      relay (fragile, reverse-engineers session protocol, would become obsolete
+      maintenance when Anthropic ships the official version). Instead: track
+      upstream releases and surface the day they ship anything matching this
+      pattern. Trigger to reconsider: a 'remote control' / 'mobile session' /
+      'session relay' / 'web client for Claude Code' feature ships.
+    watch: [release, commits, issues_open]
+
+# ── Output preferences ───────────────────────────────────────────────────────
+# When raiding, format the reply for Telegram (compact, scannable).
+#   - One section per category (## Media, ## Runtime, ## Models, ...)
+#   - Per repo: name + emoji health badge + 3 bullets max
+#       🟢  no breaking changes / stable
+#       🟡  notable changes (new features, deprecations) — read details
+#       🔴  breaking changes / security advisories — action required
+#   - End with "Recommended actions" section if anything 🔴 or 🟡
+#   - Always end with "_via GitHub_" attribution footer (per SOUL.md rule)
+
+output_format:
+  reply_style: telegram
+  group_by: category
+  emoji_health: true
+  recommend_actions: true

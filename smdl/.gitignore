@@ -1,0 +1,33 @@
+# SMDL .gitignore — applies when this directory is carved out via
+# `git subtree split --prefix=smdl/` into the standalone sentinel-smdl repo.
+
+# Local operational state
+config/smdl.json            # local config — chat IDs, allowed users. Ship smdl.example.json instead.
+downloads/
+cookies/
+*.session                   # Telethon session files
+.env
+.env.local
+
+# Private plugin overlay — site-specific URL patterns, extractor patches,
+# anything that shouldn't ship in the public sentinel-smdl release.
+# README.md and __init__.py are public infrastructure for plugin authors.
+app/plugins/*.py
+!app/plugins/__init__.py
+
+# Standard Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Editor/OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
