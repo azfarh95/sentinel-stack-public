@@ -1,0 +1,20 @@
+services:
+  sentinel-print:
+    build: .
+    image: sentinel-print:latest
+    container_name: sentinel-print
+    restart: unless-stopped
+    # Published to host 0.0.0.0 -> reachable at the tailnet IP (100.64.0.6:631/6632)
+    # WITHOUT tailscale serve. Cut over to these ports only after the WSL cups +
+    # sentinel-print-web units are stopped (they hold 631/6632 via WSL forwarding).
+    ports:
+      - "631:631"
+      - "6632:6632"
+    volumes:
+      - ./data:/data   # persistent library + thumbnails + retention config
+    environment:
+      PRINTER_NAME: EPSON_L1250
+      PRINTER_URI: ipp://192.168.50.145/ipp/print
+      PRINTER_MODEL: everywhere
+      DATA_DIR: /data
+      MAX_MB: "50"

@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+httpx==0.28.1
+# Pillow + python-multipart bumped 2026-05-21 to silence Dependabot.
+# Pillow generates icons (Image.new), never decodes user uploads.
+# python-multipart is required for form-encoded admin POST handlers
+# (auth-perms v2 — /admin/users, /auth/setup).
+pillow==12.2.0
+python-multipart==0.0.27
+# auth-perms v2 Phase 2: scope catalogue loader.
+pyyaml==6.0.2
+# Network dashboard "Add device" QR enrolment — pure-python QR encoder that
+# emits inline SVG (no Pillow/native deps). Used by /api/headscale/enroll.
+segno==1.6.1

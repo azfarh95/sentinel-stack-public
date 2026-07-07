@@ -1,0 +1,40 @@
+# Minimal docker-compose for the fresh-install test.
+# Stands alone — does NOT depend on the rest of the Sentinel stack.
+
+services:
+  smdl:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: smdl
+    restart: "no"   # the test orchestrator brings it up and tears it down
+    user: "0:0"
+    ports:
+      # Test/dev ports use 4xxx range to avoid collisions with our 8xxx
+      # production allocations (prod smdl on 8096, etc.).
+      - "127.0.0.1:4096:8096"
+    environment:
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      CONFIG_FILE: /config/smdl.json
+      # SMDL_BOT_TOKEN is intentionally NOT set — bot polling will fail loudly
+      # but the FastAPI health endpoint still comes up, which is what the test
+      # checks. If you want the bot half tested too, drop a real token in .env.test.
+      SMDL_BOT_TOKEN: ${SMDL_BOT_TOKEN:-test-token-replace-me}
+    volumes:
+      - ./test-config:/config
+      - test_downloads:/downloads
+      - test_cookies:/cookies
+      - test_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+volumes:
+  test_downloads:
+  test_cookies:
+  test_data:

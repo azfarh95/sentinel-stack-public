@@ -1,0 +1,30 @@
+# Public TLS edge for the headscale control server.
+#
+# WHY THIS EXISTS: headscale's TS2021 control protocol cannot traverse
+# Cloudflare. The Tailscale client opens the noise handshake with an HTTP POST
+# carrying `Upgrade: tailscale-control-protocol`, and Cloudflare (proxy AND
+# tunnel) only forwards GET-based `websocket` upgrades — it strips the rest.
+# headscale's own logs show every client retry rejected with
+# "No Upgrade header in TS2021 request". The maintainer states flatly that
+# headscale behind Cloudflare "will never work". So this Caddy terminates TLS
+# directly (bypassing Cloudflare) and reverse-proxies to headscale with the
+# upgrade header intact — Caddy forwards arbitrary Upgrade headers natively,
+# no extra directives needed.
+#
+# CERT: HTTP-01 over port 80. The router reserves WAN 443 (AiCloud/WAN-HTTPS),
+# so we serve the control endpoint on :8443 and let Caddy solve the ACME
+# challenge on :80 instead of TLS-ALPN-01 (which is 443-only). No Cloudflare
+# DNS API token required. Because the listener is a non-443 port, the server_url
+# in headscale-config/config.yaml MUST carry the explicit :8443, and every
+# client (phone, host) must use https://headscale.az-sentinel.xyz:8443.
+#
+# REACHABILITY (set at cutover):
+#   - DNS: headscale.az-sentinel.xyz = DNS-only (grey-cloud) A -> 137.59.185.35
+#   - Router: forward external TCP 8443 -> 192.168.50.74:8443  (control traffic)
+#               and external TCP 80 -> 192.168.50.74:8080      (ACME HTTP-01)
+#   - This container maps host 8443 -> Caddy :8443 and host 8080 -> Caddy :80,
+#     joined to metamcp-network.
+
+headscale.az-sentinel.xyz:8443 {
+	reverse_proxy headscale:8080
+}

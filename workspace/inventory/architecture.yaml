@@ -1,0 +1,187 @@
+# Static architecture knowledge — manually maintained.
+# Refresh ./running.yaml for live state via: python scripts/refresh_inventory.py
+#
+# This file captures things that don't change minute-to-minute:
+# component categorization, dependency edges, the "why" behind each piece.
+
+last_reviewed: "2026-05-09"
+review_cadence_days: 30   # bump last_reviewed when stale
+
+# ── Logical groups ────────────────────────────────────────────────────────────
+groups:
+  metamcp_core:
+    purpose: "Tool router + 12 MCP servers"
+    scope: "Sentinel V3 (in scope for V6 packaging)"
+    containers: [metamcp, metamcp-pg, smdl, translate-mcp, ytdlp-mcp,
+                 google-workspace-mcp, github-mcp, onedrive-mcp, libretranslate,
+                 reminders-mcp, memory-mcp, maps-mcp]
+
+  sentinel_native:
+    purpose: "Human-interface layer (mini-app + watchdog + bots)"
+    scope: "In scope for V6"
+    processes: [bridge.py, watchdog.py, infer_bridge.py, tray_monitor.py, memory.exe]
+    services_wsl: [openclaw-gateway.service]
+
+  sentinel_browser:
+    purpose: "V3 browser panel (CDP screencast + Playwright MCP)"
+    scope: "In scope for V6"
+    processes: [chrome-cdp, playwright-mcp-proxy.js, "playwright-mcp (×2)"]
+    ports: [9222, 8931]
+
+  crib_watchdog:
+    purpose: "Home-automation: HA, power monitoring, gaming-session detection"
+    scope: "Out of V6 scope — separate project, separate repo recommended"
+    containers: [crib-home-assistant, crib-power-monitor, crib-telegram-bot,
+                 crib-automation, crib-wol, crib-nginx, crib-postgres, crib-redis]
+
+  claude_assistant:
+    purpose: "V4 standalone QA env (built, not actively used)"
+    scope: "Out of V6 scope"
+    containers: [claude-assistant-testbot, claude-assistant-testlogger]
+
+  game_server:
+    purpose: "ARK gameserver — unrelated to AI stack"
+    scope: "Out of V6 scope"
+    containers: [ark-survival-evolved, ark-rcon-manager]
+
+# ── Critical dependency edges ─────────────────────────────────────────────────
+dependencies:
+  # Edges where breaking the source breaks the target.
+  - {from: docker_desktop,         to: metamcp_core,         type: hard, why: "All MCP servers run as containers"}
+  - {from: wsl2_ubuntu,            to: openclaw_gateway,     type: hard, why: "OpenClaw runs as systemd service in WSL"}
+  - {from: lm_studio,              to: openclaw_gateway,     type: hard, why: "Inference backend"}
+  - {from: lm_studio,              to: infer_bridge,         type: hard, why: "Proxy target"}
+  - {from: openclaw_gateway,       to: bridge.py,            type: soft, why: "Mini-app reads openclaw.json + sends commands"}
+  - {from: telegram_bot_api,       to: watchdog.py,          type: hard, why: "DNS/health alerts + model menu"}
+  - {from: telegram_bot_api,       to: bridge.py,            type: hard, why: "TOTP, owner identity, chat composer"}
+  - {from: cloudflare_tunnel,      to: bridge.py,            type: soft, why: "Mini-app remote access (works on LAN without)"}
+  - {from: metamcp,                to: openclaw_gateway,     type: hard, why: "Agent's tool layer"}
+  - {from: chrome_cdp,             to: playwright_mcp_proxy, type: hard, why: "Browser tool path"}
+
+# ── Component descriptions (the screws and nuts) ──────────────────────────────
+components:
+
+  bridge.py:
+    type: python
+    purpose: "Sentinel V3 mini-app + bridge endpoints + V3 browser CDP screencast + cookie import + LM autosync"
+    location: "sentinel-miniapp-v2/bridge.py"
+    size_kb: 86
+    listens_on: 8098
+    background_threads:
+      - lm-autosync (5min cycle, calls scripts/sync_lm_models.py)
+      - browser-cdp (CDP screencast for V3 browser panel)
+      - browser-poll (polling fallback when CDP disconnected)
+      - telethon-loop (user-account chat composer)
+    reads_files:
+      - openclaw.json (via UNC \\\\wsl.localhost\\Ubuntu-24.04\\…)
+      - models.json
+      - sessions.json
+      - auth-profiles.json
+    writes_files:
+      - openclaw.json (when settings change in mini-app)
+      - sessions.db (mini-app session storage)
+    api_endpoints_count: ~50
+
+  watchdog.py:
+    type: python
+    purpose: "DNS/health checks, Telegram bot for status + model switching, alert dispatcher"
+    location: "watchdog/watchdog.py"
+    size_kb: 92
+    has_telegram_bot: true
+    monitors:
+      - DNS resolution (your-domain.example.com)
+      - Docker container health
+      - LM Studio API
+      - Disk usage
+      - GPU power draw (via crib_power_monitor link)
+
+  infer_bridge.py:
+    type: python
+    purpose: "Transparent HTTP proxy in front of LM Studio for inference detection"
+    location: "infer_bridge.py"
+    listens_on: 8095
+    forwards_to: "http://127.0.0.1:1234"
+    consumed_by: crib_power_monitor
+
+  openclaw_gateway:
+    type: nodejs_systemd_service
+    purpose: "The agent runtime — Qwen3.6-27B + tool calling + Telegram channel"
+    location_wsl: "/home/azfar/.npm-global/lib/node_modules/openclaw"
+    listens_on: 18789
+    config: "/home/azfar/.openclaw/openclaw.json"
+    hot_reload_signal: SIGUSR1
+    reload_command: "wsl -u root -- systemctl kill -s SIGUSR1 openclaw-gateway.service"
+
+  metamcp:
+    type: docker
+    purpose: "MCP tool router with 2 namespaces (default, Media)"
+    listens_on: 12008
+    db: metamcp-pg (postgres)
+    namespaces: 2
+    mcp_servers_registered: 15  # 6 STDIO + 8 STREAMABLE_HTTP + 1 SSE
+    known_issue: "STDIO servers spawned once per namespace (metamcp#272) — workaround: nightly restart"
+
+  lm_studio:
+    type: native_windows
+    purpose: "Local LLM inference"
+    binary: "%USERPROFILE%\\.lmstudio\\bin\\lms.exe"
+    api: "http://127.0.0.1:1234/v1"
+    primary_model: qwen/qwen3.6-27b
+    primary_context: 131072   # 128K (bumped from 98K on 2026-05-09 evening to give compaction more headroom)
+    secondary_model: qwen/qwen3-coder-30b
+    settings_to_remember:
+      - context_size: 131072  # was 98304 → bumped 2026-05-09 21:45 SGT after stuck-loop incident
+      - eval_batch_size: 512  # bumped from default 256 for faster prefill
+      - unified_kv_cache: true
+      - parallel_slots: 4
+      - kv_cache_quantization: q4_0  # K and V both, saves VRAM at minor quality cost
+    saved_default_config_path: "%USERPROFILE%\\.lmstudio\\.internal\\user-concrete-model-default-config\\qwen\\qwen3.6-27b.json"
+    notes: |
+      All 3 layers synced (runtime, LM Studio saved default, OpenClaw contextTokens).
+      Persisted across LM Studio GUI relaunches.
+
+  cloudflare_tunnel:
+    type: native_windows_service
+    purpose: "Exposes mini-app at your-domain.example.com publicly"
+    binary: cloudflared.exe
+    apex_dns: "your-domain.example.com CNAME → your-domain.example.com (proxied)"
+
+  scheduled_tasks:
+    - name: "Sentinel Watchdog"
+      runs: "watchdog.py"
+      trigger: "On startup"
+    - name: "Watchdog Tray Monitor"
+      runs: "scripts/tray_monitor.py"
+      trigger: "On user logon"
+    - name: "Playwright MCP Watcher"
+      runs: "scripts/playwright-mcp-watcher.ps1"
+      trigger: "Every 5 minutes"
+    - name: "Sentinel Backup Lean (daily)"
+      runs: "scripts/BACKUP_LEAN.ps1"
+      schedule: "Daily 03:00"
+    - name: "Sentinel Backup Full (weekly)"
+      runs: "scripts/BACKUP_FULL.ps1"
+      schedule: "Sundays 02:00"
+
+# ── Open architecture decisions (V6 prep) ─────────────────────────────────────
+open_decisions:
+  v6_audience:
+    question: "V6 for me-only or community?"
+    status: pending
+    blocking: [installer_ux, license_audit, secret_handling]
+
+  compose_consolidation:
+    question: "Merge 6 compose files → 2 with profiles?"
+    status: recommended
+    effort_hours: 1
+    benefit: "Drops Sentinel core install from 24 → 12 containers"
+
+  openclaw_in_docker:
+    question: "Containerize OpenClaw to drop WSL2 dependency?"
+    status: deferred
+    risk: "Architecturally bigger change, V6.x not V6.0"
+
+  auto_update_strategy:
+    question: "How does V6.1 reach existing installs?"
+    options: [winget_repo, in_app_notify, reinstall_required]
+    status: pending

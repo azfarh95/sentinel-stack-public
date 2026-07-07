@@ -1,0 +1,18 @@
+{
+  "shortcuts": [
+    {
+      "id": "bills-week",
+      "icon": "💳",
+      "label": "Bills This Week",
+      "category": "Finance",
+      "prompt": "What are my upcoming bills due this week? Check the Bills calendar and my memory for CC due dates."
+    },
+    {
+      "id": "deployment-week",
+      "icon": "🏢",
+      "label": "Deployment This Week",
+      "category": "Work",
+      "prompt": "What's my YourAgency deployment schedule this week? Check the Deployments calendar."
+    }
+  ]
+}

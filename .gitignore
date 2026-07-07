@@ -1,0 +1,151 @@
+# Secrets
+.env.local
+.env.local.backup-*
+.env.local.bak*
+*.env
+.env.*
+# per-consumer scoped secret files (sentinel_secrets.scoped_env) — least-privilege
+# slices of .env.local mounted into portfolio-mcp/smdl; NEVER commit
+.env.portfolio-mcp
+.env.smdl
+!.env.local.template
+secrets/
+auth-profiles.json
+# Real-Debrid API token written by the running smdl container
+smdl/config/rd_token
+# Trakt OAuth tokens (access/refresh) written by the running smdl container
+smdl/config/trakt_token.json
+# Track-B browser-assistant transient run logs
+browser-assistant/runs.jsonl
+browser-assistant/_*.log
+# Headscale ACL backups created ad-hoc before edits
+headscale-config/acl.json.bak-*
+
+# Image/source backups (docker save tarballs etc.)
+_backups/
+
+# Stale-cleanup archive folders (moved-out source, not tracked here)
+_archive_*/
+
+# Sibling projects with their own git repos (not submodules)
+sentinel-panel/
+sentinel-shopping/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Data / DB
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.sqlite3-shm
+*.sqlite3-wal
+data/
+
+# Vaultwarden — runtime data should NEVER be in source control
+# (sqlite journals, JWT signing key, attachments). Vault should
+# ultimately live in its own repo / out-of-tree dir; this rule is
+# a tripwire until that extraction happens.
+vaultwarden-data/
+
+# Session secrets / runtime keys
+.session_secret
+# Web Push VAPID keypair (private key is a secret; generated on first run)
+vapid_keys.json
+sentinel-miniapp-v2/vapid_keys.json
+
+# Claude session transcripts (may contain secrets)
+watchdog/*.txt
+
+# Per-user contact registry (contains real Telegram chat IDs — do not commit)
+watchdog/contacts.json
+
+# Playwright MCP runtime artefacts (screenshots, console logs)
+.playwright-mcp/
+
+# Logs
+*.log
+*.txt.log
+*_err.txt
+logs/
+
+# Backups
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+
+# One-off scripts
+send_ig.py
+
+# Local secrets config (use config.example.json as template)
+config.json
+
+# TOTP setup page — local only, never commit
+sentinel-miniapp/totp_setup.html
+sentinel-miniapp-v2/totp_setup.html
+
+# GitHub Actions — allow our workflows, keep upstream CI/CD out of tracking
+# .github/ was previously ignored; now tracking only our own workflows
+!.github/
+!.github/workflows/
+.github/workflows/dependabot.yml
+
+# Headscale runtime DB + private keys (Phase 1, 2026-05-10)
+headscale-data/
+
+# AmneziaWG (private keys + server config + client configs)
+amneziawg-config/
+amneziawg-data/
+
+# Vaultwarden snapshot backups — contain all WCM secrets, NEVER commit.
+# Created ad-hoc before risky operations (e.g. token rotation). Restore via
+# stop+swap of /vw-data volume if you need to roll back.
+vaultwarden-data.bak-*/
+vaultwarden-data.bak*/
+.turbo/
+
+# sentinel-apps: APK + desktop-installer binaries are big + per-build — don't
+# commit them. manifest.json IS tracked so the catalogue is reproducible from
+# clone (it carries each artifact's size + sha256).
+sentinel-apps/*/v*/app.apk
+sentinel-apps/*/v*/*.apk
+sentinel-apps/*/v*/*.msi
+sentinel-apps/*/v*/*.exe
+
+# Exception: auth-perms scope catalogue (Phase 1) — committed source-of-truth
+!sentinel-vpn-dashboard/data/
+!sentinel-vpn-dashboard/data/scopes.yaml
+# But Phase 2's runtime SQLite + WAL/SHM sidecars stay out of git
+sentinel-vpn-dashboard/data/auth.db
+sentinel-vpn-dashboard/data/auth.db-wal
+sentinel-vpn-dashboard/data/auth.db-shm
+# Network dashboard runtime state (WoL device store; control-plane backups are
+# already covered by the global backups/ rule)
+sentinel-vpn-dashboard/data/wol_devices.json
+
+# Caddy runtime cert/state (never commit)
+caddy-data/
+caddy-config/
+caddy-tailnet-data/
+caddy-tailnet-config/
+
+# Archived v1 watchdog is a preserved nested repo (own .git) — keep out of this tree
+/_archive/watchdog-v1/
+# Comet bridge shared token (secret) — never commit
+comet-sidepanel/extension/config.local.js
+
+# browser-assistant transient test output
+browser-assistant/_*.out

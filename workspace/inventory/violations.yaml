@@ -1,0 +1,146 @@
+# Hardcoded paths & identifiers tracker — manually maintained.
+# Source audit: workspace/proposals/2026-05-09-V6-prep-Hardcoded-Paths.md
+# Update status as fixes land. Closed entries can be archived to ./violations-closed.yaml after a few weeks.
+
+last_updated: "2026-05-10 (Phases A, B, C, D complete — V6 prep DONE)"
+
+# Status values: open | in_progress | fixed_in:<commit-sha-prefix> | wont_fix:<reason>
+
+categories:
+
+  C_drive_users_azfar:
+    severity: hard
+    total: 38
+    status: fixed_in:1ebb1c1..HEAD  # Phase B landed 2026-05-09
+    fix_pattern: "%~dp0 (.bat) / $PSScriptRoot (.ps1) / pathlib.Path(__file__).parent (.py)"
+    fix_phase: B
+    notes: "All 35 hard violations migrated to script-relative paths. Re-grep returns zero. Python paths resolved via Get-Command, LM Studio via %LOCALAPPDATA%."
+
+  wsl_unc_paths:
+    severity: hard
+    total: 10
+    status: fixed_in:5b61c9a..HEAD  # Phase A landed 2026-05-09
+    fixed_files: [
+      "sentinel-miniapp-v2/bridge.py",
+      "watchdog/watchdog.py",
+      "watchdog/guest_caps.py",
+      "scripts/sync_lm_models.py",
+    ]
+    fix_pattern: "_paths.py at repo root reads SENTINEL_WSL_DISTRO + SENTINEL_WSL_USER env vars"
+    fix_phase: A  # paths module
+
+  wsl_home_azfar:
+    severity: hard
+    total: 3
+    status: fixed_in:5b61c9a..HEAD  # Phase A landed 2026-05-09
+    fixed_files: [
+      "watchdog/watchdog.py",            # uses _paths.OPENCLAW_NPM_PKG_PATH_BASH + OPENCLAW_NPM_PREFIX_BASH
+      "sentinel-miniapp-v2/bridge.py",   # uses _paths.OPENCLAW_NPM_BIN_BASH + WSL_USER + WSL_DISTRO
+    ]
+    fix_pattern: "Explicit /home/{WSL_USER} path (not $HOME) — root-context aware"
+    fix_phase: A
+
+  telegram_owner_id_YOUR_TELEGRAM_CHAT_ID:
+    severity: soft
+    total: 10
+    status: fixed_in:1ebb1c1..HEAD  # Phase C landed 2026-05-09
+    canonical_locations: [
+      "config.json",
+      "watchdog/config.json",
+      "smdl/config/smdl.json",
+    ]
+    acceptable: [
+      "scripts/sanitize-public.sh",       # the sanitizer itself
+      "watchdog/guest_caps.py:216",       # comment example
+    ]
+    fix_pattern: "Drop fallback dicts, raise on missing. JS uses chat_id sign heuristic (negative=group)."
+    fix_phase: C
+    notes: "bridge.py raises if telegram_chat_ids.dm missing. keyboard_bot.py SystemExits on missing IDs. notify_owner.ps1 reads from config.json. app.js compares sign-of-chat-id (negative=group)."
+
+  cookies_dir_g_drive:
+    severity: soft
+    total: 4
+    open_files: [
+      "scripts/refresh_cookies.ps1",      # 1 hardcoded
+    ]
+    already_configurable: [
+      "sentinel-miniapp-v2/bridge.py:1629",   # has _cfg.get fallback
+    ]
+    fix_pattern: "Single cookies_dir setting in config.json with USERPROFILE-relative default"
+    fix_phase: D
+
+  backup_destination_g_drive:
+    severity: soft
+    total: 6
+    open_files: [
+      "scripts/BACKUP_LEAN.ps1",          # 3
+      "scripts/BACKUP_FULL.ps1",          # 3 (incl WSL home)
+      "scripts/REGISTER_BACKUP_TASKS.ps1", # 2 description-only
+    ]
+    fix_pattern: "Param -Destination, default $env:USERPROFILE\\Sentinel-Backups"
+    fix_phase: D
+
+  lm_studio_binary:
+    severity: acceptable
+    total: 1
+    note: "scripts/sync_lm_models.py uses %USERPROFILE%\\.lmstudio\\bin\\lms.exe — already env-var-based, this is the canonical install location"
+    fix_phase: none
+
+# ── Aggregate progress ────────────────────────────────────────────────────────
+totals:
+  hard:       57
+  soft:       14
+  acceptable:  2
+  total:      73
+
+  fixed:      58   # A (13) + B (35) + C (10), all smoke-tested 2026-05-09
+  in_progress: 0
+  open:       15  # remaining: cookies/backup G:\ drives + LM Studio binary (already env-based) + 1-2 minor
+
+# ── Phase plan from the audit doc ─────────────────────────────────────────────
+phases:
+  A:
+    name: "Single source of truth (_paths.py module)"
+    estimated_hours: 1
+    handles_violations: 13
+    blocking_for: [running_on_fresh_user_account, V6_bootstrap_script]
+    status: complete
+    completed: "2026-05-09"
+    notes: "13 violations across 4 files migrated to _paths.py at repo root. Bridge + watchdog smoke-tested OK. End-to-end LM autosync via mini-app endpoint verified."
+
+  B:
+    name: "Script-relative paths in batch/PS"
+    estimated_hours: 2
+    handles_violations: 35
+    blocking_for: [V6_bootstrap_script]
+    status: complete
+    completed: "2026-05-09"
+
+  C:
+    name: "Drop fallback defaults for personal IDs"
+    estimated_hours: 0.5
+    handles_violations: 10
+    blocking_for: [public_repo_safety]
+    status: complete
+    completed: "2026-05-09"
+
+  D:
+    name: "Add SENTINEL_HOME env var + drive-letter parameterization"
+    estimated_hours: 0.5
+    handles_violations: 10
+    blocking_for: [V10_portable_install]
+    status: not_started
+
+  E:
+    name: "Test on fresh Windows user account"
+    estimated_hours: 2
+    blocking_for: [V6_release_candidate]
+    status: not_started
+
+# ── Files already clean (the shape to aim for) ────────────────────────────────
+clean_files: [
+  "sentinel-miniapp-v2/cdp_client.py",
+  "sentinel-miniapp-v2/playwright_client.py",
+  "infer_bridge.py",
+  "watchdog/store_secrets.py",
+]

@@ -1,0 +1,34 @@
+# OpenClaw SHADOW — clone-first validation, NOT cutover.
+# Isolated from the live Dove path: own port (18790->18789, live gateway keeps 18789),
+# own ~/.openclaw volume (seeded from a trimmed copy with baseUrl repointed to the host),
+# never auto-starts (profile "shadow"), manual restart control during validation.
+#   Run:  docker compose -f docker-compose.shadow.yml --profile shadow up -d
+#   Exec: docker exec openclaw-shadow openclaw agent --json --message "..."
+services:
+  openclaw-shadow:
+    build: .
+    image: openclaw-shadow:2026.6.1
+    container_name: openclaw-shadow
+    profiles: ["shadow"]
+    ports:
+      - "127.0.0.1:18790:18789"        # own host port; never collide with live :18789
+    environment:
+      # Container bind=auto (0.0.0.0) requires gateway auth; loopback-published only.
+      - OPENCLAW_GATEWAY_TOKEN=shadow-validation-token
+    volumes:
+      - openclaw-shadow-config:/root/.openclaw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach Qwen :8095 on the Windows host
+    networks:
+      default: {}                              # compose-created net (for the port publish)
+      metamcp-net: {}                          # join metamcp's net → reach it as http://metamcp:12008
+    restart: "no"
+    stop_grace_period: 10s
+
+volumes:
+  openclaw-shadow-config:
+
+networks:
+  metamcp-net:
+    external: true
+    name: metamcp-local_metamcp-network

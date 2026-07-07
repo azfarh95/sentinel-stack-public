@@ -1,0 +1,519 @@
+# Sentinel Stack — Agent Benchmark Database
+#
+# Each entry captures one agent run for a defined task, with metrics auto-
+# extracted from session trajectories where possible. New entries appended
+# at the BOTTOM (so older work stays at the top for chronological reading).
+#
+# Generate new entries via: python scripts/extract_benchmark.py <trajectory> ...
+# Manual fields (quality_subjective, notes, task) need hand-editing after
+# extraction.
+#
+# Schema versioning: bump schema_version when shape changes; old entries
+# stay in place for historical comparison.
+
+schema_version: 1
+last_updated: "2026-05-09"
+
+benchmarks:
+
+  - id: 2026-05-09-v3-wishlist-sentinel
+    task: V3 handheld-AI wishlist — research synthesis
+    description: |
+      Open-ended research mission. Agent asked: "What would I want from my
+      hand-held AI personal assistant agent?" Goal: build knowledge repo
+      for V3 scope. 5 web searches in parallel, 5+ deep article fetches,
+      synthesize into structured markdown.
+    agent: sentinel-local
+    model: qwen/qwen3.6-27b
+    quantization: Q4_K_M
+    context_loaded: 98304
+    parent: 2026-05-09-v3-wishlist
+    sibling_run: 2026-05-09-v3-wishlist-claude
+
+    trajectory: \\wsl.localhost\Ubuntu-24.04\home\azfar\.openclaw\agents\main\sessions\a94079dc-d20f-4e43-a34c-7cde5ac0436b.trajectory.jsonl
+    turn_range: [3, 5]
+    start_local: "2026-05-09T18:44:39+08:00"
+    end_local: "2026-05-09T18:54:40+08:00"
+    wall_clock_seconds: 601
+    wall_clock_minutes: 10.0
+    model_invocations: 3
+
+    tokens:
+      input: 450741
+      output: 5850
+      total: 456591
+      peak_input_per_turn: 235908
+      ratio_in_to_out: 77.0
+    tool_calls:
+      web_fetch: 10       # actual fetches across all turns (last-snap counter undercounted)
+      brave_web_search: 5
+      file_write: 1
+    compaction_count: 0
+
+    output_artifact:
+      file: workspace/research/V3-handheld-AI-wishlist-sentinel.md
+      words: 2136
+      chars: 14696
+      lines: 144
+      pages_double_spaced_250wpp: 9
+      pages_single_spaced_500wpp: 4
+      pages_published_750wpp: 3
+
+    cost_estimate:
+      electricity_sgd: 0.014
+      api_equivalent_sgd: 1.94
+      savings_sgd: 1.93
+
+    observed_issues:
+      - "Turn 3 + Turn 4 were synthesis false-starts (announced 'Now I have substantial material' but didn't write the file). Turn 5 finally landed the doc."
+      - "Peak input 236K vs 98K loaded context — LM Studio likely silently truncated. compactionCount stayed 0 (OpenClaw didn't compact)."
+
+    quality_subjective_1to10: 7
+    notes: |
+      Solid for a 9-page output. 12 feature categories, top-10 ranked, 8
+      reality checks, 9 source citations. Sources skewed toward general-
+      interest blogs (Vellum, Zapier, UX Collective) — missed self-hosted
+      community voices entirely. Honest reality-check section was a strong
+      pattern that should be required for future research missions.
+
+  - id: 2026-05-10-bills-calendar-multitool
+    task: |
+      "Can you pull out the April statements, identify the statement date,
+      estimate when the next statement will be out for May 2026, provide a
+      listing to me and add it to my Bills calendar to remind me to extract
+      and download the statements to OneDrive?"
+    description: |
+      Real-world multi-tool task. Tests tool chaining across:
+      OneDrive (statement files), Gmail (statement notifications),
+      memory-mcp (store findings), Google Calendar (create reminder),
+      reminders-mcp.
+    agent: sentinel-local
+    model: qwen/qwen3.6-27b
+    quantization: Q4_K_M
+    context_loaded: 131072
+    parent: null
+    sibling_run: null
+
+    trajectory: \\wsl.localhost\Ubuntu-24.04\home\azfar\.openclaw\agents\main\sessions\e806f43b-f2e2-4b83-8642-4f80a89c3f36.trajectory.jsonl
+    turn_range: [7, 7]
+    start_local: "2026-05-10T01:39:19+08:00"
+    end_local:   "2026-05-10T01:46:27+08:00"   # last Telegram reply observed in logs
+    wall_clock_seconds: 428
+    wall_clock_minutes: 7.1
+    model_invocations: 1
+
+    tokens:
+      input: 376360            # OpenClaw's pre-compaction count; actual on-wire was within 128K
+      output: 3976
+      total: 380336
+      peak_input_per_turn: 376360
+      ratio_in_to_out: 94.7
+      note: "Input is OpenClaw's pre-compaction tally. Compaction (reserveTokensFloor=30K + softThreshold=4K, threshold=94K) shrank actual LM Studio prompt to fit in 128K loaded context. Single turn — would have been multi-turn but agent kept all reasoning + tool calls in one assistant message."
+
+    tool_calls:
+      metamcp__memory-mcp__memory_store: 5
+      metamcp__GoogleWorkspace__calendar_create_event: 2
+      metamcp__memory-mcp__memory_search: 1
+      metamcp__memory-mcp__memory_update: 1
+      metamcp__GoogleWorkspace__calendar_list_calendars: 1
+      metamcp__GoogleWorkspace__calendar_list_events: 1
+      metamcp__Playwright__browser_navigate: 1
+      metamcp__Playwright__browser_snapshot: 1
+      memory_get: 2          # local fallback (non-namespaced — likely a hallucinated tool name)
+      memory_search: 1       # same
+      write: 2               # generic file write
+    compaction_count: 0    # OpenClaw compaction at session start, not mid-turn
+
+    output_artifact:
+      type: side_effects   # not a file output — calendar event + memory entries
+      planned_calendar_event:
+        summary: "📄 Extract & Download May 2026 CC Statements to OneDrive"
+        start: "2026-05-10"
+        cards_listed: 8     # UOB CashPlus, Maybank CA, SC Simply Cash, SC Balance Transfer, Maybank Platinum, DBS Cashline, DBS CC, HSBC CC
+        statement_date_estimates: "2026-05-20 to 2026-05-30"
+      planned_memory_entries: 5
+
+    cost_estimate:
+      electricity_sgd: 0.060   # ~7 min × 300W × SGD 0.2727/kWh × 1.65 PUE
+      api_equivalent_sgd: 1.60
+      savings_sgd: 1.54
+
+    observed_issues:
+      - severity: blocker
+        what: "All MetaMCP tool calls failed with 'Session not found' / 'Transport not found for sessionId 799eab15-7ab5-41a9-a2f7-b8e6f0b38569'"
+        root_cause: |
+          Earlier in the same session (~30 min before this prompt), the metamcp
+          docker container was recreated as part of compose consolidation work.
+          The MCP HTTP transport sessions established before the restart became
+          stale. OpenClaw's MetaMCP client kept the old session ID and didn't
+          re-initialize, so every tool call hit a now-orphaned session.
+        impact: "Agent's reasoning and tool-call planning was correct (8 cards identified, dates estimated, calendar event drafted with correct content). But none of it persisted — calendar event not created, memory not stored, reminder not set. Agent dutifully sent the listing as a Telegram reply so the user got the analysis, just none of the side effects."
+        fix: "Restart bridge.py + SIGUSR1 OpenClaw gateway. Forces MCP transport sessions to re-initialize. ~30 sec downtime."
+        prevent: "After any metamcp container recreate, the post-up should automatically restart bridge.py and signal OpenClaw to re-establish MCP transports. Add to scripts/START_AI_STACK.bat or to a post-restart hook in docker-compose.yml's metamcp service."
+
+    quality_subjective_1to10: 8
+    quality_breakdown:
+      reasoning: 9       # all 8 cards identified, grace periods computed, May dates estimated, password+OCR caveats noted
+      resilience: 9      # detected calendar tool failure, offered 3 alternatives (TG reminder, retry, OneDrive check), self-saved to local memory as fallback, told user honestly "the calendar tool is glitching"
+      execution: 1       # zero side effects landed (calendar event not created, memory_store failed, write failed)
+      communication: 9   # markdown tables, clear action items, asked good follow-up questions, didn't claim false success
+
+    notes: |
+      Genuinely impressive resilience. Despite EVERY tool call failing
+      (stale MCP sessions from earlier container restart), the agent:
+
+      1. Produced a complete, accurate analysis as a Telegram reply that
+         the user can act on directly:
+         - All 8 cards with Apr statement date + due date + grace period
+         - May 2026 estimates derived from the Apr pattern
+         - Special-case notes (DBS = password-protected PDFs, HSBC = OCR
+           needed, 2 cards have unknown Apr data)
+
+      2. Detected each tool failure as it happened, didn't pretend
+         success ("The Google Workspace calendar tool is throwing a
+         session error right now — looks like a temporary glitch")
+
+      3. Offered 3 useful fallback paths: set a Telegram reminder,
+         retry calendar later, check OneDrive for already-downloaded
+         statements
+
+      4. Persisted the analysis to LOCAL memory as a fallback when
+         memory_store API failed
+
+      The one negative: the agent's "self-saved to local memory" claim
+      may itself have failed (last log line: "Write failed"). So even
+      the fallback persistence didn't fully land.
+
+      Useful as a benchmark BECAUSE of both the resilience demonstration
+      AND the failure-mode surfacing. Without this benchmark, the
+      class-of-bug (post-container-restart MCP session staleness) might
+      only have shown up to the user as "Sentinel said it created a
+      reminder but the calendar's empty."
+
+      Recommendation: re-run this exact prompt now that MCP sessions
+      have been refreshed (bridge.py + OpenClaw SIGUSR1 done at
+      ~01:48 SGT). DONE — see sibling 2026-05-10-bills-calendar-retry.
+
+  - id: 2026-05-10-bills-calendar-retry
+    task: "Same prompt as 2026-05-10-bills-calendar-multitool — sent again after MCP sessions refreshed"
+    description: |
+      Identical prompt sent ~5 min after bridge.py + OpenClaw restart.
+      Tests whether the same agent succeeds end-to-end with working tools,
+      AND whether the agent does context-aware retry (skip redundant
+      reasoning, only execute the missing action).
+    agent: sentinel-local
+    model: qwen/qwen3.6-27b
+    quantization: Q4_K_M
+    context_loaded: 131072
+    parent: null
+    sibling_run: 2026-05-10-bills-calendar-multitool
+
+    trajectory: \\wsl.localhost\Ubuntu-24.04\home\azfar\.openclaw\agents\main\sessions\e806f43b-f2e2-4b83-8642-4f80a89c3f36.trajectory.jsonl
+    turn_range: [8, 8]
+    start_local: "2026-05-10T01:51:36+08:00"
+    end_local:   "2026-05-10T01:53:59+08:00"
+    wall_clock_seconds: 143
+    wall_clock_minutes: 2.4
+    model_invocations: 1
+
+    tokens:
+      input: 113987
+      output: 1707
+      total: 115694
+      peak_input_per_turn: 113987
+      ratio_in_to_out: 66.8
+
+    tool_calls:
+      metamcp__GoogleWorkspace__calendar_create_event: 1   # the only NEW call this turn — succeeded
+
+    compaction_count: 0
+
+    output_artifact:
+      type: side_effects
+      created_calendar_event:
+        google_event_id: "o3e77gl3v81rp0s9a8dtok6748"
+        summary: "📄 Download May 2026 CC Statements → OneDrive"
+
+    cost_estimate:
+      electricity_sgd: 0.020
+      api_equivalent_sgd: 0.37
+      savings_sgd: 0.35
+
+    observed_issues: []
+
+    quality_subjective_1to10: 5    # downgraded after ground-truth check vs PDFs
+    quality_breakdown:
+      reasoning: 4         # confidently wrong dates — see ground_truth_comparison
+      resilience: 10       # NA (no failures in retry; first attempt's resilience was real)
+      execution: 7         # tool call landed, but with wrong-day timing + wrong-dates description
+      communication: 6     # output looked structured + confident, but the confidence was misleading
+
+    ground_truth_comparison:
+      method: "Read each Apr'26 PDF in C:\\Users\\azfar\\OneDrive\\CC_Statement\\Apr'26 via pypdf, extracted statement dates"
+      script: "scripts/extract_statement_dates.py"
+      findings:
+        - card: Maybank CA
+          sentinel_claimed: "29 Apr"
+          actual_pdf:       "15 APR 2026 (Due: 05 May)"
+          drift_days: 14
+        - card: SC Simply Cash CC
+          sentinel_claimed: "25 Apr"
+          actual_pdf:       "16 Apr 2026 (Due: 10 May)"
+          drift_days: 9
+        - card: Maybank Platinum Visa
+          sentinel_claimed: "25 Apr"
+          actual_pdf:       "23 APR 2026 (Due: 15/05/2026)"
+          drift_days: 2
+        - card: UOB CashPlus
+          sentinel_claimed: "29 Apr"
+          actual_pdf:       "due date 04 MAY 2026 (statement date not in text)"
+          drift_days: "~16 (inferred from due-date)"
+        - card: DBS Cashline
+          sentinel_claimed: "~20 Apr (estimate, noted)"
+          actual_pdf:       "encrypted — could not verify"
+          drift_days: null
+        - card: DBS CC
+          sentinel_claimed: "~30 Apr (estimate, noted)"
+          actual_pdf:       "encrypted — could not verify"
+          drift_days: null
+        - card: HSBC CC
+          sentinel_claimed: "Unknown (honestly stated)"
+          actual_pdf:       "image-only PDF, no extractable text — Sentinel's 'unknown' was correct"
+          drift_days: 0      # honest admission
+
+    root_cause_analysis: |
+      Sentinel did NOT read the PDFs. The trajectory shows zero
+      onedrive_read or document-extract tool calls. Dates came from
+      memory_search results — likely pulling old or imagined patterns
+      from prior conversations, not current ground truth.
+
+      Compounding error: because Apr statement dates are 9-14 days
+      earlier than claimed, the May estimates are off by the same
+      amount. The Bills calendar event:
+        - is dated for today (2026-05-10) — wrong day for the reminder
+        - description says "est. out 25-30 May" — actually ~15-23 May
+        - May actually be DROPPING NOW, while reminder fires today
+
+      The agent's reasoning chain LOOKED plausible (grace-period math,
+      structured tables, citation of source pattern) but every premise
+      was incorrect. Pattern-matching its own prior memory entries
+      instead of verifying against source documents.
+
+    benchmark_lesson: |
+      Confident-but-wrong is the dangerous failure mode for personal AI
+      assistants. A user who trusts the agent's clean Markdown table will
+      miss their statement window and could miss a payment.
+
+      The fix is NOT smarter reasoning — it's source-document
+      verification. Sentinel should:
+        1. Search OneDrive/CC_Statement for the most recent statement
+           folder (Apr'26 in this case)
+        2. Read each PDF it can (pypdf or onedrive_read with extraction)
+        3. For encrypted/image PDFs, surface the limitation explicitly
+        4. Present dates as "verified from PDF" vs "estimated from
+           pattern" with different confidence markers
+
+    follow_up_correction:
+      sent_at: "2026-05-10T02:27:50+08:00"
+      task: "User flagged the wrong dates + applied new TOOLS.md rule (Source-of-Truth Discipline) before sending"
+      result: |
+        Agent response (turn 9): demonstrably applied the new rule.
+        - Made 4 onedrive_read calls + 3 exec calls trying to verify against PDFs
+        - Onedrive MCP threw aiohttp parse errors; agent fell back to user-provided ground-truth dates
+        - Acknowledged the failure mode explicitly: "I pattern-matched
+          from memory instead of reading the actual source documents"
+        - Updated calendar event start date from 10 May → 13 May
+        - Stored memory ID 45: "NEVER estimate statement dates from memory..."
+
+        Initially appeared to skip the calendar/memory tool calls — turned
+        out to be a parser bug in my analysis script (snap[64] had an
+        unrecognized role format). Verification turn 10 confirmed both
+        actions actually completed and showed via calendar_get + memory_search
+        that the side effects landed.
+
+      verify_turn_quality: |
+        Turn 10 (verification challenge — "you claimed you did X, prove it"):
+        - Ran calendar_get + memory_search to verify
+        - Showed actual tool results in reply
+        - Self-critique: "I announced success without showing the tool
+          results... that's the exact announce-then-skip pattern the
+          Self-Correction Discipline rule warns against. Lesson learned:
+          always show tool results or explicitly verify before claiming
+          success."
+        Quality: 10/10 — meta-learning behavior, exemplary
+
+      outcome:
+        calendar_event_final_state:
+          id: o3e77gl3v81rp0s9a8dtok6748
+          summary: "📄 Download May 2026 CC Statements → OneDrive (Corrected Dates)"
+          start: "2026-05-13"
+          end: "2026-05-16"
+          color_id: 10
+        memory_id_45:
+          content_preview: "NEVER estimate statement dates from memory. Memory-based estimates for Apr'26 CC statement dates were off by 9-14 days..."
+          tags: ["incident", "finance", "lesson"]
+
+    notes: |
+      Originally rated 10/10 because the calendar event creation
+      succeeded end-to-end and the agent demonstrated context-aware
+      retry. After ground-truth verification against the actual PDFs,
+      downgraded to 5/10. Side-effect-execution was clean, but the
+      *content* of the side effect was wrong — wrong day, wrong dates.
+
+      Demonstrates **context-aware retry** — a meaningful agent capability.
+      After the failed run produced complete reasoning but failed side
+      effects, the retry recognized "the analysis is done in conversation
+      history, only the calendar event needs creating" and executed
+      exactly that. Single tool call, single success, full task completion.
+
+      Cost comparison:
+        Failed attempt: 376K input  (~SGD 1.60 cloud-equivalent)
+        Retry:          114K input  (~SGD 0.37 cloud-equivalent)
+        Combined:       490K input  (~SGD 2.00)
+        vs naive 2x:    752K input  (~SGD 3.20) — saved ~40%
+
+      Side effect verified live: Google Calendar event ID
+      o3e77gl3v81rp0s9a8dtok6748 created in the Bills calendar with the
+      full 8-card statement schedule.
+
+  - id: 2026-05-10-bank-email-audit-3pass
+    task: "Phase 0 bank email audit — categorize each bank's senders as STATEMENT vs MARKETING, identify ATTACH vs LINK delivery"
+    description: |
+      Three iterations of the same task, each pass fixing a distinct
+      prompt-design failure surfaced by user feedback. Tests the agent's
+      ability to learn from corrections within a conversation.
+    agent: sentinel-local
+    model: qwen/qwen3.6-27b
+    quantization: Q4_K_M
+    context_loaded: 131072
+    parent: null
+    sibling_run: null
+
+    trajectory: \\wsl.localhost\Ubuntu-24.04\home\azfar\.openclaw\agents\main\sessions\e806f43b-f2e2-4b83-8642-4f80a89c3f36.trajectory.jsonl
+    turn_range: [11, 13]   # three turns: pass 1, pass 2, pass 3
+    start_local: "2026-05-10T03:34:36+08:00"
+    end_local:   "2026-05-10T04:08:00+08:00"   # approximate
+    wall_clock_minutes: ~33
+    model_invocations: 3
+
+    iterations:
+      pass_1:
+        prompt_strategy: "Domain-restricted (.com.sg only)"
+        wall_clock: 6.4 min
+        result: "Found 3 banks with statements; missed Maybank entirely (uses .com not .com.sg)"
+        failure_mode: "Domain assumption — banks use multiple TLDs"
+
+      pass_2:
+        prompt_strategy: "Broad name-based search (per bank: 'DBS' OR 'POSB', 'Maybank', etc.)"
+        wall_clock: 11.2 min
+        result: "Found 4 banks with statements; classified HSBC as MARKETING-only"
+        failure_mode: "Top-K classification — high-volume marketing senders drown out statements"
+        user_feedback: "I have HSBC statements in this email"
+
+      pass_3:
+        prompt_strategy: "Subject-targeted filter (subject:statement / subject:eStatement)"
+        wall_clock: ~10 min
+        result: "Found HSBC statements at ebanking@mail.hsbc.com.sg with ATTACH delivery"
+        new_insight: "HSBC is the ONLY ATTACH bank — fully Phase-1-automatable. Self-correction log added by agent documenting the lesson."
+
+    quality_subjective_1to10: 9
+    quality_breakdown:
+      iterative_learning: 10  # each pass demonstrably better than prior
+      source_of_truth: 9      # actually read emails (per the new TOOLS.md rule); didn't pattern-match
+      self_documentation: 10  # agent wrote a "Self-Correction Log" section unprompted
+      thoroughness: 8         # missed UOB/GXS until specifically prompted to verify
+      communication: 9        # clear tables, classification rationale, confidence markers
+
+    notes: |
+      Demonstrates a meaningful capability: the agent learns from user
+      corrections within a single conversation. Each iteration:
+        - Pass 1 → Pass 2: user identified prompt narrowness; agent
+          adopted broader name-based search
+        - Pass 2 → Pass 3: user provided ground truth ("HSBC statements
+          DO exist"); agent re-searched with targeted subject filter
+          AND wrote a self-correction log explaining the failure mode
+
+      The agent's pass-3 self-correction log is exemplary:
+        "High-volume marketing senders require subject-specific filters
+         (subject:statement, subject:eStatement) to surface statement
+         emails. Never classify a bank as marketing-only without first
+         trying statement-specific subject filters."
+
+      Generalizable lesson for future research-style prompts:
+        1. Don't constrain by domain — use bank name + acronym
+        2. For high-noise senders, use subject-targeted filters
+        3. After negative result, verify with explicit subject filter
+           before concluding the bank is genuinely absent
+
+      Outcome: HSBC identified as the FIRST automatable bank for Phase 1
+      (Gmail watcher → PDF attachment → OneDrive). Other banks (DBS,
+      Maybank, SC) confirmed as LINK delivery requiring portal access.
+      UOB/GXS/Hong Leong absent from this email account → require
+      Gmail forwarding from secondary account or per-bank email update.
+
+  - id: 2026-05-09-v3-wishlist-claude
+    task: V3 handheld-AI wishlist — expansion / second pass
+    description: |
+      Layered second pass on top of Sentinel's baseline. Brief: read
+      Sentinel's 9-page output, identify gaps, run targeted searches in
+      sources Sentinel missed (Reddit r/selfhosted, r/LocalLLaMA, HN,
+      mem0/Letta/Open WebUI roadmaps), produce expanded analysis with
+      Singapore-context relevance.
+    agent: claude-general-purpose
+    model: claude-(api)
+    quantization: null
+    context_loaded: null
+    parent: 2026-05-09-v3-wishlist
+    sibling_run: 2026-05-09-v3-wishlist-sentinel
+
+    trajectory: null   # Claude general-purpose agent does not produce a session trajectory file
+    turn_range: null
+    start_local: "2026-05-09T19:18:00+08:00"  # approximate from launch time
+    end_local: "2026-05-09T19:23:12+08:00"    # task completion ts from notification
+    wall_clock_seconds: 312
+    wall_clock_minutes: 5.2
+    model_invocations: null   # not exposed via subagent task notification
+
+    tokens:
+      input: null            # only total exposed via notification (62,354)
+      output: null
+      total: 62354
+      peak_input_per_turn: null
+      ratio_in_to_out: null
+    tool_calls:
+      total_tool_uses: 20    # WebSearch + WebFetch + Read + Write breakdown not exposed
+
+    output_artifact:
+      file: workspace/research/V3-handheld-AI-wishlist-expanded.md
+      words: 4519
+      chars: 31224
+      lines: 327
+      pages_double_spaced_250wpp: 18
+      pages_single_spaced_500wpp: 9
+      pages_published_750wpp: 6
+
+    cost_estimate:
+      electricity_sgd: null  # cloud, not local
+      api_equivalent_sgd: 1.50  # rough estimate for Claude Sonnet/Opus tier @ ~62K total tokens
+      savings_sgd: null
+
+    observed_issues:
+      - "Claude general-purpose subagent doesn't produce a queryable trajectory.jsonl, so per-turn timing isn't extractable. Only the final task-notification summary."
+
+    quality_subjective_1to10: 8
+    notes: |
+      18-page output, ~2x the size of Sentinel's. Three substantive new
+      insights: (1) memory failure decomposes into 5 distinct modes,
+      (2) self-hosting in SG is cost-NEUTRAL not cheaper, (3) proactive AI
+      is the most-disabled feature category. Specific disagreement with
+      Sentinel: voice belongs on V3 not V5. Better source diversity than
+      Sentinel — pulled from communities Sentinel didn't tap.
+
+# ── Aggregate stats (refresh manually after additions) ────────────────────────
+
+aggregate:
+  total_benchmarks: 2
+  total_wall_clock_minutes: 15.2
+  total_estimated_cost_sgd: 0.014   # local only; cloud cost not summed
+  total_output_pages: 27            # combined Sentinel + Claude
+  total_tokens_processed: 518945

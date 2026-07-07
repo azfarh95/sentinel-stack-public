@@ -1,0 +1,112 @@
+# Sentinel auth-perms v2 — authoritative scope catalogue.
+#
+# Source of truth for what permissions exist in the stack. Every
+# `require_scope("X")` call across all pillars MUST correspond to
+# an entry here. CI could enforce this later; for now it's manual.
+#
+# To add a scope:
+#   1. Append entry below (alphabetical within its pillar block).
+#   2. Add `require_scope("new.scope")` to the route(s) in that pillar.
+#   3. Update the design doc (docs/auth-perms-v2.md §5).
+#   4. Owner re-issues cookies for users who need the new scope.
+#
+# Special-case scopes (NOT in this table):
+#   "*"        — wildcard, all scopes. Owner cookie v1 has implicit *.
+#   "<pillar>.*" — pillar-wide wildcard (e.g. "smdl.*" grants
+#                   smdl.iptv + smdl.downloader + ...).
+#
+# Spec: docs/auth-perms-v2.md
+# Last reviewed: 2026-05-27
+
+scopes:
+
+  # ── SMDL pillar ─────────────────────────────────────────────
+  smdl.iptv:
+    owner: smdl
+    label: "IPTV browser, EPG, recording"
+    routes: ["/iptv", "/iptv/*", "/api/iptv/*"]
+
+  smdl.downloader:
+    owner: smdl
+    label: "yt-dlp /dl flow + URL cache"
+    routes: ["/dl", "/api/dl/*"]
+
+  smdl.streamtracker:
+    owner: smdl
+    label: "Watchlist add/remove + live recording"
+    routes: ["/watchlist", "/api/miniapp/watchlist*"]
+
+  smdl.stickers:
+    owner: smdl
+    label: "Sticker maker — videos → Telegram packs"
+    routes: ["/stickers", "/api/sticker_drafts/*"]
+
+  smdl.admin:
+    owner: smdl
+    label: "SMDL admin tab (site blocklist, user mgmt)"
+    routes: ["/api/miniapp/admin/*"]
+
+  # ── Finance pillar ──────────────────────────────────────────
+  finance.view:
+    owner: finance
+    label: "Finance dashboards read-only"
+    routes: ["/dashboard", "/report/*", "/api/* (GET)"]
+
+  finance.write:
+    owner: finance
+    label: "Ledger edits, reconciliation, journals"
+    routes: ["/api/* (POST/PATCH/DELETE)"]
+
+  # ── Sentinel AI pillar ──────────────────────────────────────
+  ai.chat:
+    owner: sentinel-ai
+    label: "Sentinel AI conversations"
+    routes: ["/chat", "/api/brain/*"]
+
+  ai.admin:
+    owner: sentinel-ai
+    label: "Model selection, secrets, tool overrides"
+    routes: ["/api/brain/admin/*"]
+
+  # ── Gaming pillar ───────────────────────────────────────────
+  gaming.play:
+    owner: gaming
+    label: "Connect to game servers"
+    routes: ["/api/games/*"]
+
+  gaming.host:
+    owner: gaming
+    label: "Start/stop game-server containers"
+    routes: ["/api/games/admin/*"]
+
+  # ── Suite (sentinel-vpn-dashboard) ──────────────────────────
+  network.view:
+    owner: suite
+    label: "VPN dashboard read"
+    routes: ["/vpn", "/api/cf", "/api/all", "/api/whereami"]
+
+  network.admin:
+    owner: suite
+    label: "Exit node toggles, peer config"
+    routes: ["/api/vpn/admin/*"]
+
+  apps.install:
+    owner: suite
+    label: "Sideload Apps store access (read + download)"
+    routes: ["/apps", "/api/apps", "/apps/*"]
+
+  licenses.manage:
+    owner: suite
+    label: "License registry — view + revoke issued keys"
+    routes: ["/admin/licenses", "/api/licenses", "/api/licenses/*"]
+
+  # ── Watchdog pillar ─────────────────────────────────────────
+  watchdog.view:
+    owner: watchdog
+    label: "Service health dashboards"
+    routes: ["/miniapp", "/api/v2/health", "/api/v2/all"]
+
+  watchdog.restart:
+    owner: watchdog
+    label: "Trigger restarts on specific services"
+    routes: ["/api/v2/restart/*"]

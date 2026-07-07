@@ -1,0 +1,1712 @@
+# Sentinel Stack — consolidated Docker Compose (V6 prep)
+#
+# Consolidated from docker-compose.{local,smdl,firefly}.yml on 2026-05-10.
+# All services here. Optional services gated by profiles.
+#
+# Default profile (no flag) brings up the production "core" stack:
+#   metamcp + postgres + 9 MCP servers
+#
+# Optional profiles:
+#   media     → smdl (standalone media downloader)
+#   finance   → Firefly III financial tracking + its postgres
+#
+# Usage:
+#   docker compose --env-file .env.local up -d                       # core only
+#   docker compose --env-file .env.local --profile media up -d       # core + smdl
+#   docker compose --env-file .env.local --profile media --profile finance up -d   # everything
+#
+# Volume names below are preserved EXACTLY from the prior split-file setup
+# so existing container data continues to be mounted on first up.
+#
+# Loopback-only port bindings (127.0.0.1:) — exposed publicly only via
+# Cloudflare Tunnel for the mini-app subdomain.
+
+services:
+
+  # ── Core: MetaMCP + postgres ────────────────────────────────────────────────
+
+  app:
+    container_name: metamcp
+    # Forked from upstream metatool-ai/metamcp at v2.4.22 + cherry-picked PRs:
+    #   - PR #273: prevent subprocess leaks from concurrent session creation
+    #   - PR #283: re-init backend session when 404 Session not found
+    # Source: github.com/YOUR_GITHUB_USERNAME/metamcp branch sentinel-patches
+    # Locally-built image, pull_policy: never until pushed to GHCR.
+    # Rollback: change image back to ghcr.io/metatool-ai/metamcp:latest +
+    # set pull_policy: always.
+    image: ghcr.io/YOUR_GITHUB_USERNAME/sentinel-metamcp:sentinel-latest
+    pull_policy: always
+    # Secrets lock-down (ADR AI-004 / INF-009): the gateway needs ONLY its own
+    # keys (DATABASE_URL / APP_URL / BETTER_AUTH_SECRET / TRANSFORM_*, in the
+    # environment: block below). It uses NONE of the stack secrets — those
+    # belong to the individual MCP servers (HTTP/SSE ones via their own
+    # container env; the 3 stdio ones via the per-server `env` map in
+    # mcp_servers — DuckDuckGo/Filesystem need none, Tavily has its own key).
+    # MetaMCP filters child env via getDefaultEnvironment(), so stdio children
+    # never inherited these anyway. Removed the wholesale .env.local slurp so a
+    # gateway compromise no longer leaks every secret in the stack.
+    ports:
+      - "127.0.0.1:12008:12008"
+    volumes:
+      # Secrets lock-down (ADR AI-004, R3): scope the Filesystem MCP's mount to
+      # ONLY the dirs it's configured for (Documents/Desktop/Downloads) instead
+      # of the whole home tree — so .env.local, the secret backups, and the rest
+      # of ~ are NOT inside the container / reachable by a gateway compromise or
+      # another stdio server. The Filesystem server args (/workspace/Documents
+      # /workspace/Desktop /workspace/Downloads in mcp_servers) are unchanged.
+      - "${USERPROFILE}/Documents:/workspace/Documents"
+      - "${USERPROFILE}/Desktop:/workspace/Desktop"
+      - "${USERPROFILE}/Downloads:/workspace/Downloads"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-metamcp_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}@${POSTGRES_HOST:-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-metamcp_db}
+      APP_URL: ${APP_URL:-http://localhost:12008}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:12008}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL: ${TRANSFORM_LOCALHOST_TO_DOCKER_INTERNAL:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: metamcp-pg
+    restart: unless-stopped
+    # Secrets lock-down (ADR INF-009, Step 4): the postgres image reads ONLY
+    # POSTGRES_* (supplied by the environment: block below, interpolated from
+    # .env.local via `--env-file`). The wholesale `env_file: .env.local` slurp
+    # was removed so the database no longer carries every stack secret in its
+    # env. Do NOT re-add it.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metamcp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-metamcp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+    ports:
+      - "127.0.0.1:${POSTGRES_EXTERNAL_PORT:-9433}:5432"
+    volumes:
+      - metamcp_local_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metamcp_user} -d ${POSTGRES_DB:-metamcp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - metamcp-network
+
+  # ── Core: MCP servers (always on) ───────────────────────────────────────────
+
+  ytdlp-mcp:
+    build:
+      context: ./ytdlp-mcp
+      dockerfile: Dockerfile
+    container_name: ytdlp-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}:/downloads"
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}/cookies:/cookies"
+      - ytdlp_mcp_data:/data
+    # Secrets lock-down (ADR INF-009): scoped to its own keys; no .env.local slurp.
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      DEFAULT_QUALITY: 1080p
+      MAX_CONCURRENT_DOWNLOADS: "2"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  portfolio-mcp:
+    # 2026-05-15 cutover: build context + finance/ mount now sourced from
+    # ../sentinel-finance (the canonical SoT). Previously ./portfolio-mcp
+    # and ./finance, both now legacy in-place copies. See LEGACY-NOTICE.md
+    # files in those directories for context.
+    build:
+      context: ../sentinel-finance
+      dockerfile: Dockerfile
+    container_name: portfolio-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+      # Tailscale access via host-level netsh portproxy (Docker Desktop on Windows
+      # ignores non-loopback/0.0.0.0 host IPs). See V4 prep docs for WSL2 migration
+      # path which would replace this with direct uvicorn bind.
+    volumes:
+      - portfolio_mcp_data:/data
+      - "../sentinel-finance/finance:/finance:rw"
+      - "./google-workspace-mcp/data:/google-workspace-mcp/data:ro"
+      # Sentinel Finance folder provisioning (creates Sentinel Finance/* subfolders).
+      # OneDrive Personal root — used by app.folder_provisioning to mkdir locally.
+      - "${USERPROFILE}\\OneDrive:/onedrive:rw"
+      # SECURITY (ADR INF-009 / least privilege): mount a SCOPED secrets file
+      # holding ONLY this container's keys, NOT the whole .env.local (68 keys =
+      # every stack secret). Regenerated from .env.local by
+      # sentinel_secrets.scoped_env on every projection/Set; in-container path
+      # stays /secrets/.env.local so /internal/reload-env is unchanged.
+      - "./.env.portfolio-mcp:/secrets/.env.local:ro"
+    # Secrets lock-down (ADR INF-009): scoped env block AND scoped reload file;
+    # no whole-.env.local slurp or mount.
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      CRONOSCAN_API_KEY: ${CRONOSCAN_API_KEY:-}
+      ETHERSCAN_V2_KEY: ${ETHERSCAN_V2_KEY:-}
+      MORALIS_API_KEY: ${MORALIS_API_KEY:-}
+      PORTFOLIO_DEFAULT_ADDRESS: ${PORTFOLIO_DEFAULT_ADDRESS:-}
+      PORTFOLIO_DUST_USD: "0.01"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TESTBOT_TOKEN: ${TESTBOT_TOKEN:-}
+      OWNER_CHAT_ID: "YOUR_TELEGRAM_CHAT_ID"
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD:-}
+      OWNER_TAILNET_LOGIN: ${OWNER_TAILNET_LOGIN:-azfar}   # mesh auto-login: Tailscale-User-Login of the owner (via `tailscale serve`)
+      ONCHAIN_ALERT_MIN_USD: "1.0"
+      # Moralis free plan: 40k CU/day. Polling 7 chains every 5min = ~10k CU/day baseline
+      # before any snapshot calls. BOOT FALLBACK only — Defi's /config/moralis owns
+      # the cadence at runtime (jobs.py re-syncs after each poll). 240 = 4h (light user).
+      ONCHAIN_POLL_INTERVAL_MIN: "240"
+      FIREFLY_PAT: ${FIREFLY_PAT:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      WISE_API_TOKEN: ${WISE_API_TOKEN:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      SENTINEL_FINANCE_AGENT_TOKEN: ${SENTINEL_FINANCE_AGENT_TOKEN:-}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-your@email.com}
+      PWA_HOST_OVERRIDE: ${PWA_HOST_OVERRIDE:-https://sentinelfinance.your-domain.example.com}
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      # #42 — reload-env fanout from sentinel-watchdog (#27).
+      INTERNAL_RELOAD_TOKEN: ${INTERNAL_RELOAD_TOKEN:?INTERNAL_RELOAD_TOKEN must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      ENV_LOCAL_PATH: /secrets/.env.local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Test container for replay-sim work (#19/#20). Same image as production,
+  # but isolated volumes + read-only OneDrive + different port. Activate
+  # with `docker compose --profile test up portfolio-mcp-test`. Bootstrap +
+  # replay + compare modules are TBD per task #19; this entry just gives
+  # them a home to run in.
+  portfolio-mcp-test:
+    profiles: ["test"]
+    # FIN-16 M6 (2026-06-24): pinned to a fixes-baked snapshot so the test
+    # container survives the periodic `compose up` recreate that kept reverting
+    # docker-cp'd code to the prod-tag baseline. Rebuild this snapshot after new
+    # code: `docker cp app/. portfolio-mcp-test:/app/app && docker commit
+    # portfolio-mcp-test portfolio-mcp-test:m6fixes`. Prod's `:latest` tag is
+    # untouched. Revert to `metamcp-local-portfolio-mcp:latest` post-cutover.
+    image: portfolio-mcp-test:m6fixes
+    container_name: portfolio-mcp-test
+    restart: "no"
+    # Moved off :8095 (2026-06-24) to avoid colliding with watchdog's infer-bridge,
+    # which the other session restarts on :8095. The finance test container is
+    # reached via `docker exec` (no HTTP needed); :8295 is just a spare, verified
+    # free (not running, not elsewhere in this compose).
+    ports:
+      - "127.0.0.1:8295:8086"
+    volumes:
+      - portfolio_mcp_test_data:/data
+      - "../sentinel-finance/finance:/finance:ro"
+      - "${USERPROFILE}\\OneDrive:/onedrive:ro"
+    env_file:
+      - .env.local
+    environment:
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      SENTINEL_FINANCE_TEST_MODE: "1"
+      # Full-history rebuild: bypass each cutover module's pre-cutover skip and
+      # enable the per-transaction 1190-suspense ("SIM-STUB") so unclassified
+      # statement lines book to suspense (visible) instead of the triage queue
+      # (invisible to the GL). app.simulator.replay also sets this in-process,
+      # but pinning it here keeps the flag from being lost on --force-recreate.
+      SIMULATOR_NO_CUTOVER: "1"
+    networks:
+      - metamcp-network
+
+  # NOTE: shopping-mcp was containerized 2026-05-20 then reverted to native
+  # 2026-05-21 because the headful-in-container Chromium fingerprint failed
+  # Shopee's Akamai bot-shield while native Chrome+nodriver beat it cleanly.
+  # The native service is launched by the watchdog (see watchdog.py
+  # "Shopping MCP" entry) and reachable via host.docker.internal:8100.
+  # Dockerfile + volume kept around in case we revisit.
+
+  reminders-mcp:
+    build:
+      context: ./reminders-mcp
+      dockerfile: Dockerfile
+    container_name: reminders-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8087:8087"
+    volumes:
+      - reminders_mcp_data:/data
+    # Secrets lock-down (ADR INF-009): scoped to its own keys; no .env.local slurp.
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      LOCAL_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      SCHEDULER_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  google-workspace-mcp:
+    build:
+      context: ./google-workspace-mcp
+      dockerfile: Dockerfile
+    container_name: google-workspace-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8089:8089"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\google-workspace-mcp\\data:/data"
+    environment:
+      CREDENTIALS_FILE: /data/credentials.json
+      TOKEN_FILE: /data/token.json
+      REDIRECT_URI: http://localhost:8089/oauth/callback
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  maps-mcp:
+    build:
+      context: ./maps-mcp
+      dockerfile: Dockerfile
+    container_name: maps-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    # Secrets lock-down (ADR INF-009): scoped to its own keys; no .env.local slurp.
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      LOCAL_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  memory-mcp:
+    build:
+      context: ./memory-mcp
+      dockerfile: Dockerfile
+    container_name: memory-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8092:8092"
+    volumes:
+      - memory_mcp_data:/data
+    networks:
+      - metamcp-network
+
+  # PDF → LLM-ready Markdown (PyMuPDF4LLM) + Tesseract OCR for scanned docs.
+  # Drop files into ./pdf-mcp/inbox (mounted read-only at /data) or pass URLs.
+  pdf-mcp:
+    build:
+      context: ./pdf-mcp
+      dockerfile: Dockerfile
+    container_name: pdf-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8099:8099"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\pdf-mcp\\inbox:/data:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Vision MCP (ADR AI-016) — converged perception: OCR (RapidOCR PP-OCR/ONNX),
+  # documents (PyMuPDF), and schema-structured extract via the local Qwen. The
+  # OCR front door that lets the brain drop mmproj (text-only Qwen < 20 GB).
+  # Drop images into ./vision-mcp/inbox (read-only at /data) or pass URLs/base64.
+  vision-mcp:
+    build:
+      context: ./vision-mcp
+      dockerfile: Dockerfile
+    container_name: vision-mcp
+    restart: unless-stopped
+    # Hard resource ceiling (6c/12t box). The safety net: OCR is CPU-bound and
+    # ONNX defaults to ALL cores per inference, so an unbounded burst can starve
+    # the whole box (incident 2026-06-24). Capped at 4 CPUs, vision-mcp can NEVER
+    # exceed its slice — a runaway is self-contained, not box-wide.
+    cpus: 4.0
+    mem_limit: 4g
+    ports:
+      - "127.0.0.1:8097:8097"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\vision-mcp\\inbox:/data:ro"
+    environment:
+      # extract's structuring step calls the host's llama-swap (OpenAI-compatible).
+      QWEN_BASE: "${VISION_QWEN_BASE:-http://host.docker.internal:1234/v1}"
+      QWEN_MODEL: "${VISION_QWEN_MODEL:-qwen/qwen3.6-27b}"
+      VISION_DESCRIBE_ENABLED: "0"   # Phase 2 VLM lane stays off
+      # OCR concurrency control: each RapidOCR/ONNX run is bounded to a few
+      # threads, and at most N run at once (queue beyond that) → no oversubscription.
+      VISION_OCR_THREADS: "2"        # intra-op threads per OCR inference
+      VISION_OCR_CONCURRENCY: "3"    # max concurrent OCR (rest queue on a semaphore)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8097/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Sentinel AI Mobile — phone.vision shim (Phase 2). Routes image+prompt to the
+  # phone's on-device Gemma-4-E4B when online, else falls back to the box Qwen-VL
+  # (:1234 --mmproj). PHONE_VL_BASE unset = Qwen-VL only (the proof slice).
+  # See sentinel-ai-mobile/SCOPE.md.
+  phone-vision-mcp:
+    build:
+      context: ./phone-vision-mcp
+      dockerfile: Dockerfile
+    container_name: phone-vision-mcp
+    restart: unless-stopped
+    # No host port published — metamcp reaches it in-network as phone-vision-mcp:8100
+    # (host 8100/8102 are already taken by other svcs, and a host port isn't needed
+    # for an MCP server; debug via `docker exec phone-vision-mcp ...`).
+    expose:
+      - "8100"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\phone-vision-mcp\\inbox:/data:ro"
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - QWEN_VL_BASE=http://host.docker.internal:1234
+      - PHONE_VL_BASE=${PHONE_VL_BASE:-}
+      - PHONE_VL_TOKEN=${PHONE_VL_TOKEN:-}
+      - PHONE_VL_MODEL=${PHONE_VL_MODEL:-gemma-4-e4b}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/health"]
+      interval: 30s
+      timeout: 8s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Sentinel Box Link — the phone's authenticated tailnet channel to the box
+  # (boxlink.svc.your-domain.example.com -> host.docker.internal:8130). Self-update version
+  # check now; MCP tools, Dove (D) + hive (E) later. Additive/isolated — does not
+  # touch metamcp/OpenClaw/brain-store. BOX_LINK_TOKEN unset = open (version-only).
+  box-link:
+    build:
+      context: ./box-link
+      dockerfile: Dockerfile
+    container_name: box-link
+    restart: unless-stopped
+    ports:
+      - "8130:8130"
+    volumes:
+      - "${USERPROFILE}\\metamcp-local\\sentinel-apps:/apps:ro"
+    environment:
+      - BOX_LINK_TOKEN=${BOX_LINK_TOKEN:-}
+      - SENTINEL_APPS_DIR=/apps
+      - APK_BASE_URL=https://suite.your-domain.example.com/apps
+      - BOX_LINK_BASE_URL=https://boxlink.svc.your-domain.example.com
+      - TZ=Asia/Singapore
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8130/health'); sys.exit(0)"]
+      interval: 30s
+      timeout: 8s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Sentinel docs for the local LLM — FTS5 search + page reads over the LIVE
+  # local markdown source behind docs.your-domain.example.com (the site itself is CF
+  # Pages, no local port). Read-only mounts, no CF Access creds needed, and
+  # fresher than the deployed site (no push/cron lag).
+  docs-mcp:
+    build:
+      context: ./docs-mcp
+      dockerfile: Dockerfile
+    container_name: docs-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8107:8107"
+    volumes:
+      - "${USERPROFILE}\\sentinel-docs\\docs:/docs/core:ro"
+      - "${USERPROFILE}\\sentinel-finance\\docs:/docs/finance:ro"
+      - "${USERPROFILE}\\sentinel-watchdog\\docs:/docs/watchdog:ro"
+      - "${USERPROFILE}\\sentinel-smdl\\docs:/docs/smdl:ro"
+      - "${USERPROFILE}\\sentinel-gaming\\docs:/docs/gaming:ro"
+      - "${USERPROFILE}\\metamcp-local\\sentinel-panel\\docs:/docs/panel:ro"
+      - "${USERPROFILE}\\metamcp-local\\sentinel-shopping\\docs:/docs/shopping:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8107/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # Current time + timezone math for the local LLM (no clock otherwise).
+  time-mcp:
+    build:
+      context: ./time-mcp
+      dockerfile: Dockerfile
+    container_name: time-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8103:8103"
+    environment:
+      LOCAL_TIMEZONE: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8103/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # READ-ONLY SQL over the Sentinel data stores (Finance GL = portfolio.db).
+  # Mounts the portfolio-mcp data volume read-only; query tool is SELECT-only.
+  sqlite-mcp:
+    build:
+      context: ./sqlite-mcp
+      dockerfile: Dockerfile
+    container_name: sqlite-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8105:8105"
+    volumes:
+      - "portfolio_mcp_data:/db:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8105/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # READ-ONLY Cloudflare visibility (zones/DNS/tunnels/Pages/Access) for the LLM.
+  cloudflare-mcp:
+    build:
+      context: ./cloudflare-mcp
+      dockerfile: Dockerfile
+    container_name: cloudflare-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8106:8106"
+    environment:
+      CLOUDFLARE_API_TOKEN: "${CLOUDFLARE_API_TOKEN:-}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8106/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server
+    container_name: github-mcp
+    command: ["http", "--port", "8091", "--toolsets", "all"]
+    environment:
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PAT}
+    ports:
+      - "127.0.0.1:8091:8091"
+    restart: unless-stopped
+    networks:
+      - metamcp-network
+
+  onedrive-mcp:
+    build:
+      context: ./onedrive-mcp
+      dockerfile: Dockerfile
+    container_name: onedrive-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8093:8093"
+    volumes:
+      - onedrive_mcp_data:/data
+    # Secrets lock-down (ADR INF-009): scoped to its own keys; no .env.local slurp.
+    # ONEDRIVE_CLIENT_SECRET is read via os.environ[...] (crashes if missing).
+    environment:
+      DOCINTEL_KEY: ${DOCINTEL_KEY:-}
+      ONEDRIVE_CLIENT_SECRET: ${ONEDRIVE_CLIENT_SECRET:-}
+      # Default matches owner setup; override via .env.local for fresh installs.
+      # The sanitizer (scripts/sanitize-public.sh) replaces the owner-specific
+      # subdomain with `your-resource` before public-repo sync.
+      DOCINTEL_ENDPOINT: ${DOCINTEL_ENDPOINT:-https://your-resource.cognitiveservices.azure.com/}
+      # DOCINTEL_KEY is injected via env_file (.env.local) — do not hardcode here
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: libretranslate
+    restart: unless-stopped
+    user: "0:0"
+    ports:
+      - "127.0.0.1:5050:5000"
+    environment:
+      LT_LOAD_ONLY: "en,zh,ru"
+      LT_DISABLE_WEB_UI: "true"
+      LT_UPDATE_MODELS: "false"
+      LT_HOST: "0.0.0.0"
+      LT_PORT: "5000"
+    volumes:
+      - libretranslate_models:/root/.local/share/argos-translate
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/languages',timeout=3).status==200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 5
+    networks:
+      - metamcp-network
+
+  translate-mcp:
+    build:
+      context: ./translate-mcp
+      dockerfile: Dockerfile
+    container_name: translate-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8094:8094"
+    environment:
+      LT_BASE_URL: "http://libretranslate:5000"
+      LT_FALLBACK_URL: "https://translate.argosopentech.com"
+    depends_on:
+      libretranslate:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8094/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # ── Core: Vaultwarden self-hosted password manager ──────────────────────────
+  # Long-term home for stack secrets (currently in WCM). Empty vault on first
+  # deploy — admin creates users via http://127.0.0.1:8085/admin (token below).
+  # Bound to loopback only; data persisted to ./vaultwarden-data on Windows host.
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: vaultwarden
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:80"
+      # Loopback-only mapping. Tailnet access via
+      # 'tailscale serve --tcp=8085 tcp://127.0.0.1:8085'.
+      # Order matters: container must be (re)created BEFORE `tailscale serve`
+      # claims the port — otherwise Docker Desktop's vpnkit fails to bind
+      # silently (HostConfig populated, NetworkSettings.Ports empty).
+      # Recovery: `tailscale serve --tcp=8085 off`, recreate container,
+      # then `tailscale serve --bg --tcp=8085 tcp://127.0.0.1:8085`.
+    volumes:
+      - ./vaultwarden-data:/data
+    environment:
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN:?VAULTWARDEN_ADMIN_TOKEN must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      SIGNUPS_ALLOWED: "false"  # first user registered 2026-05-11 — keep locked
+      INVITATIONS_ALLOWED: "false"
+      DOMAIN: "https://vault.your-domain.example.com"
+      # 2026-05-11: Vault fronted by Cloudflare Tunnel (tunnel 9a2bb3c8-...).
+      # CF terminates TLS at the edge; Bitwarden's client-side crypto keeps
+      # the master password from ever reaching CF unencrypted.
+      ROCKET_PORT: "80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/alive"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # ── AmneziaWG (RKN-bypass tunnel for Russian friend) ───────────────────────
+  # Separate VPN stack from Headscale/Tailscale by design — friend's tunnel
+  # is completely isolated from the home mesh. Friend gets internet egress
+  # only; iptables rules in awg0.conf REJECT any path into LAN/Tailscale/Docker.
+  # SUPERSEDED 2026-06-06 by the WSL-native AmneziaWG server (Ubuntu-24.04,
+  # systemd unit `awg-quick@awg0`, userspace amneziawg-go). Docker Desktop on
+  # WSL2 does NOT forward inbound UDP to the host, so a published 51234/udp here
+  # is never reachable from the WAN — the container ran but never handshaked.
+  # The native server binds 0.0.0.0:51234 via WSL mirrored networking instead.
+  # Kept here (profile-gated, will NOT start on a normal `up -d`) for reference
+  # only — do NOT enable `--profile vpn-friend`, it will fight the WSL listener.
+  # See sentinel-docs runbooks/network.md + ADR NET-008.
+  amneziawg:
+    image: amneziavpn/amneziawg-go:latest
+    container_name: amneziawg
+    profiles: [vpn-friend-superseded]
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    ports:
+      - "0.0.0.0:51234:51234/udp"  # public UDP (router must port-forward this)
+    volumes:
+      - ./amneziawg-config:/etc/amneziawg
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # awg-quick up exits after applying the interface — wrap so the container
+    # stays alive (which keeps the wg interface alive in the container's
+    # network namespace). On stop, awg-quick down cleans up iptables rules.
+    command:
+      - "sh"
+      - "-c"
+      - >
+        awg-quick up /etc/amneziawg/awg0.conf &&
+        trap 'awg-quick down /etc/amneziawg/awg0.conf' TERM INT &&
+        tail -f /dev/null & wait
+    networks:
+      - metamcp-network
+
+  # ── Headscale (private mesh control plane) ─────────────────────────────────
+  # Phase 1: bound to 127.0.0.1 only — internal use, NOT internet-reachable.
+  # Phase 2 will put a reverse proxy with HTTPS + a real domain in front.
+  # Until then, Tailscale clients can register only when they can reach
+  # 127.0.0.1:8080 — i.e. the host itself, OR via SSH tunnel from another
+  # device on the home network. That's by design — keep the coordination
+  # endpoint un-exposed until we're ready to harden it.
+  headscale:
+    image: headscale/headscale:0.28.0
+    container_name: headscale
+    restart: unless-stopped
+    ports:
+      # 2026-05-16: moved 8099 -> 8081 (port 8099 collides with watchdog.py).
+      # CF Tunnel public hostname headscale.your-domain.example.com should map to localhost:8081.
+      - "127.0.0.1:8081:8080"   # coordination + UI (HTTP — Phase 2 adds HTTPS via CF Tunnel)
+      - "127.0.0.1:9090:9090"   # metrics
+      # Embedded DERP STUN — bound to all interfaces so a router port-forward
+      # (WAN UDP 3478 -> host) can reach it for off-LAN NAT traversal.
+      - "3478:3478/udp"
+    volumes:
+      - ./headscale-data:/var/lib/headscale
+      - ./headscale-config:/etc/headscale
+    command: ["serve"]
+    environment:
+      TZ: "Asia/Singapore"
+    # Note: headscale image is distroless (no /bin/sh) — use the binary directly.
+    healthcheck:
+      test: ["CMD", "headscale", "users", "list"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  # ── Caddy TLS edge for headscale (BYPASSES Cloudflare) ─────────────────────
+  # headscale's TS2021 control protocol can't go through Cloudflare (CF strips
+  # the custom `Upgrade: tailscale-control-protocol` header). This Caddy
+  # terminates TLS directly and proxies to headscale, forwarding the upgrade.
+  # Dormant behind the "edge" profile — start only at cutover with:
+  #   docker compose --env-file .env.local --profile edge up -d caddy-headscale
+  # Requires (set at cutover): headscale.your-domain.example.com DNS-only -> 137.59.185.35,
+  # router forward external TCP 8443 -> 192.168.50.74:8443 (control) and
+  # external TCP 80 -> 192.168.50.74:8080 (ACME HTTP-01). Control serves on :8443
+  # because the router reserves WAN 443; server_url carries the explicit :8443.
+  caddy-headscale:
+    image: caddy:2-alpine
+    container_name: caddy-headscale
+    restart: unless-stopped
+    profiles: ["edge"]
+    # Published on loopback only: Docker Desktop's WSL2 relay answers on
+    # 127.0.0.1 but NOT the host LAN IP, so external/router-forwarded packets
+    # to 192.168.50.74 are dropped. caddy/lan_forward.py (native, firewall-
+    # allowed) bridges 192.168.50.74:8443/:8080 -> these loopback ports.
+    # Distinct loopback port NUMBERS (18443/18080) so Docker's host proxy never
+    # collides with the real 8443/8080 that lan_forward.py binds on the LAN IP.
+    ports:
+      - "127.0.0.1:18443:8443"  # Caddy :8443 (TS2021 control) <- lan_forward 192.168.50.74:8443
+      - "127.0.0.1:18080:80"    # Caddy :80   (ACME HTTP-01)    <- lan_forward 192.168.50.74:8080
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    networks:
+      - metamcp-network
+
+  # ── Tailnet HTTPS edge (Caddy + DNS-01 wildcard) ───────────────────────────
+  # Real LE wildcard cert *.svc.your-domain.example.com (DNS-01 via Cloudflare), reached
+  # by `tailscale serve --tcp=443 -> 127.0.0.1:8453` (TLS terminated HERE). One
+  # cert + one route-per-service = browser-clean HTTPS for tailnet services with
+  # zero experimental deps. SEPARATE from caddy-headscale (control plane) on
+  # purpose. Plan: sentinel-watchdog/planning/tailnet-https.md.
+  caddy-tailnet:
+    build: ./caddy-tailnet
+    image: sentinel/caddy-cloudflare:latest
+    container_name: caddy-tailnet
+    restart: unless-stopped
+    profiles: ["edge"]
+    environment:
+      - CF_DNS01_TOKEN=${CF_DNS01_TOKEN}      # from .env.local via --env-file
+    ports:
+      - "127.0.0.1:8453:443"                  # tailscale serve --tcp=443 forwards here
+    volumes:
+      - ./caddy-tailnet/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-tailnet-data:/data            # PERSISTED cert store (survives recreate)
+      - ./caddy-tailnet-config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # reach host services (finance :8086)
+    networks:
+      - metamcp-network
+
+  # ── Sentinel Home backend (home.svc) ───────────────────────────────────────
+  # FastAPI: Google-auth gate (owner-pinned) + HA REST proxy (HA token stays
+  # server-side) + /presence (geofence -> HA device_tracker -> zone automations).
+  # Reaches HA on the host (host.docker.internal:8123). Served at
+  # home.svc.your-domain.example.com via the caddy-tailnet wildcard (one Caddy route).
+  # App + plan: ~/sentinel-home + sentinel-docs infra/planning/crib-smart-home-app.md.
+  sentinel-home-backend:
+    build: ../sentinel-home/backend
+    image: sentinel/home-backend:latest
+    container_name: sentinel-home-backend
+    restart: unless-stopped
+    environment:
+      - HA_URL=http://host.docker.internal:8123
+      - HA_TOKEN=${HOMEASSISTANT_LLM_TOKEN}
+      - GOOGLE_CLIENT_ID=${HOME_GOOGLE_CLIENT_ID:-}
+      - OWNER_EMAIL=your@email.com
+      - APP_JWT_SECRET=${HOME_APP_JWT_SECRET}
+      - PRESENCE_DEVICE=owner
+    ports:
+      - "127.0.0.1:8120:8120"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+
+  # Sentinel Home MCP — lets the local LLM / Dove control the home (tools over
+  # home.svc). Register in the MetaMCP Default namespace as streamable-http
+  # http://sentinel-home-mcp:8121/mcp. See ADR INF-011 / roadmap v0.20.
+  sentinel-home-mcp:
+    build:
+      context: ./sentinel-home-mcp
+      dockerfile: Dockerfile
+    container_name: sentinel-home-mcp
+    restart: unless-stopped
+    environment:
+      - HOME_SVC_URL=http://sentinel-home-backend:8120
+      - OWNER_EMAIL=your@email.com
+      - HOME_APP_JWT_SECRET=${HOME_APP_JWT_SECRET}
+    ports:
+      - "127.0.0.1:8121:8121"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - metamcp-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8121/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Sentinel VPN dashboard ─────────────────────────────────────────────────
+  # Unified read-only status surface for the 4 VPN routes (CF Tunnel,
+  # Headscale, AmneziaWG, ARK direct). Mounts the host docker socket so
+  # it can `docker exec headscale|amneziawg` for live state. Bound to
+  # 127.0.0.1 — reachable via LAN, tailnet, or future CF Tunnel hostname.
+  sentinel-vpn-dashboard:
+    build:
+      context: ./sentinel-vpn-dashboard
+      dockerfile: Dockerfile
+    container_name: sentinel-vpn-dashboard
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8097"
+    extra_hosts:
+      # host.docker.internal reaches the host's :8200 (watchdog License Registry).
+      - "host.docker.internal:host-gateway"
+    environment:
+      OWNER_AUTH_TOKEN: ${OWNER_AUTH_TOKEN}
+      # License Registry (watchdog v2). The /admin/licenses console proxies
+      # read+revoke to the host's :8200 with a service token. Both optional —
+      # if the token is unset the console degrades to a "registry unavailable"
+      # notice rather than failing. Reuses the same WCM-sourced token the SMDL
+      # mirror already uses (config.json service_tokens identity "smdl-operator").
+      LICENSE_REGISTRY_URL: ${LICENSE_REGISTRY_URL:-http://host.docker.internal:8200}
+      LICENSE_REGISTRY_TOKEN: ${LICENSE_REGISTRY_TOKEN:-}
+    volumes:
+      # Read-only socket — service only needs `docker exec`, never to spawn
+      # new containers. Belt + suspenders.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Self-hosted APK store — APKs + manifest live on the host under
+      # ./sentinel-apps/, served by the /apps routes in app.py.
+      - ./sentinel-apps:/apps:ro
+      # auth-perms v2: scope catalogue (read-mostly) + SQLite auth.db (mutable).
+      # Bind-mounted so the DB survives container rebuilds. scopes.yaml is
+      # tracked in git; auth.db is .gitignore'd.
+      - ./sentinel-vpn-dashboard/data:/data
+      # Headscale control-plane config — SAME host bind mount headscale itself
+      # uses (/etc/headscale). Lets the Network dashboard read+write acl.json
+      # (ACL editor) + read/edit the dns section of config.yaml (DNS mgmt) +
+      # snapshot both for control-plane backups. Owner-only writes; headscale
+      # picks up acl.json changes via SIGHUP. rw is required for ACL/DNS saves.
+      - ./headscale-config:/headscale-config:rw
+    networks:
+      - metamcp-network
+
+  # ── Sentinel Network — dedicated surface for the Network pillar ─────────────
+  # Same image as sentinel-vpn-dashboard, but SURFACE=network flips the bare `/`
+  # to serve the Network dashboard (VPN routes · Headscale · AmneziaWG · WoL ·
+  # subnet) instead of the Suite launcher. Own port (8082) + own public host
+  # (network.your-domain.example.com) so Network is a first-class surface, decoupled
+  # from the Suite launcher rather than a /network sub-path of it. Shares the
+  # same ./sentinel-vpn-dashboard/data volume → one auth.db / session / notif
+  # store across both surfaces (domain-wide owner cookie).
+  sentinel-network:
+    build:
+      context: ./sentinel-vpn-dashboard
+      dockerfile: Dockerfile
+    container_name: sentinel-network
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8097"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      OWNER_AUTH_TOKEN: ${OWNER_AUTH_TOKEN}
+      SURFACE: network
+      LICENSE_REGISTRY_URL: ${LICENSE_REGISTRY_URL:-http://host.docker.internal:8200}
+      LICENSE_REGISTRY_TOKEN: ${LICENSE_REGISTRY_TOKEN:-}
+      # Trusted Web Activity binding — values are public (cert fingerprint is not
+      # a secret). assetlinks.json serves these so the installed TWA runs without
+      # the URL bar. Fingerprint = SHA-256 of android-twa/android-twa.keystore.
+      TWA_PACKAGE_NAME: com.azsentinel.network
+      TWA_SHA256_CERT_FINGERPRINTS: "38:B3:E9:2A:78:89:F6:03:0A:A4:54:08:00:D3:91:51:FA:14:B3:2E:4A:16:F4:A1:AF:97:2C:8F:6A:9D:7B:08"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./sentinel-apps:/apps:ro
+      - ./sentinel-vpn-dashboard/data:/data
+      # See sentinel-vpn-dashboard note: shared headscale config bind mount for
+      # the ACL editor / DNS management / control-plane backup features.
+      - ./headscale-config:/headscale-config:rw
+    networks:
+      - metamcp-network
+
+  # ── Zone A exit node — PIA dedicated IP via gluetun + Tailscale sidecar
+  #     (profile: vpn) ────────────────────────────────────────────────────────
+  #
+  # Architecture: two containers sharing a network namespace.
+  #   gluetun       — owns the network namespace. Connects to PIA via
+  #                   WireGuard using the dedicated-IP config. Provides
+  #                   the actual egress tunnel.
+  #   tailscale-pia — joins the same namespace. Authenticates to the
+  #                   Tailscale mesh, advertises itself as an exit node.
+  #                   When mesh peers tagged `tag:owner` opt into "Use
+  #                   exit node = sentinel-pia-exit", their traffic
+  #                   enters this namespace via tailscale0 and leaves
+  #                   via gluetun's PIA tun device.
+  #
+  # User actions required before first `up`:
+  #   1. scripts/rotate_pia_creds.ps1   — paste PIA user/pass, stored in WCM
+  #   2. Tailscale admin console        — generate an auth key tagged
+  #                                       `tag:owner` (or whichever tag
+  #                                       you've decided owns exit nodes)
+  #   3. Add the TS_AUTHKEY to .env.local via sync_env_from_wcm.ps1
+  #
+  # First-time bring-up:
+  #   docker compose --env-file .env.local --profile vpn up -d pia-exit tailscale-pia
+  pia-exit:
+    profiles: [vpn]
+    image: qmcgaw/gluetun:v3
+    container_name: pia-exit
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      # Both forwards required by Tailscale exit-node mode. Without
+      # v6 forwarding=1, Tailscale shows "Unable to relay traffic" in
+      # the admin Edit-route-settings dialog even when v4 is fine.
+      # Note: tailscale-pia inherits these via network_mode service:pia-exit.
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.forwarding: 1
+    environment:
+      VPN_SERVICE_PROVIDER: private internet access
+      # gluetun v3 ships PIA support over OpenVPN only (not WireGuard).
+      # PIA dedicated IP is auto-assigned based on the account that owns
+      # the DIP order — no extra token needed for OpenVPN path.
+      VPN_TYPE: openvpn
+      OPENVPN_USER:     ${PIA_USER:?PIA_USER must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      OPENVPN_PASSWORD: ${PIA_PASSWORD:?PIA_PASSWORD must be set in .env.local}
+      SERVER_REGIONS:   ${PIA_REGION:-Singapore}
+      TZ: "Asia/Singapore"
+      # Healthcheck pings 1.1.1.1 via the tunnel; if PIA drops it fails fast.
+      HEALTH_TARGET_ADDRESS: 1.1.1.1:443
+    volumes:
+      - pia_exit_data:/gluetun
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=5", "https://am.i.mullvad.net/json"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  tailscale-pia:
+    profiles: [vpn]
+    image: tailscale/tailscale:stable
+    container_name: tailscale-pia
+    restart: unless-stopped
+    # Share the network namespace of pia-exit so all this container's
+    # outbound traffic exits via gluetun → PIA → internet.
+    network_mode: "service:pia-exit"
+    depends_on:
+      pia-exit:
+        condition: service_healthy
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      # MIGRATED to self-hosted headscale 2026-06-04: was the SaaS key
+      # ${TS_AUTHKEY_PIA_EXIT}; now the headscale pre-auth key (vault-managed,
+      # mirrored to .env.local) + --login-server in TS_EXTRA_ARGS below.
+      TS_AUTHKEY:    ${HEADSCALE_PREAUTH_KEY:?HEADSCALE_PREAUTH_KEY must be set in .env.local (headscale-preauth-key in the Secrets panel)}
+      TS_HOSTNAME:   sentinel-pia-exit
+      TS_STATE_DIR:  /var/lib/tailscale
+      TS_USERSPACE:  "false"
+      # Sugar-free form of --advertise-exit-node. (The shortcut form
+      # doesn't parse correctly when passed via the tailscale Docker
+      # image's wrapper; the underlying tailscaled needs the explicit
+      # --advertise-routes form.)
+      # --accept-dns=false:    we don't want this exit node hijacking DNS for mesh peers
+      # Note: --advertise-tags=tag:owner is intentionally NOT set yet —
+      # tag:owner needs to be declared in Tailscale ACL's `tagOwners` first
+      # (that's the Phase 1 work). Add this arg once the ACL has the tag.
+      TS_EXTRA_ARGS: "--advertise-routes=0.0.0.0/0,::/0 --accept-dns=false --login-server=https://headscale.your-domain.example.com:8443 --reset --force-reauth"
+    volumes:
+      - tailscale_pia_state:/var/lib/tailscale
+
+  # ── Direct-torrent fallback — qBittorrent behind PIA (profile: torrent) ──────
+  # When Real-Debrid can't serve an uncached release (HTTP 451), SMDL hands the
+  # magnet to qBittorrent, which runs inside torrent-vpn's network namespace so
+  # ALL its traffic exits via PIA. gluetun's firewall is a kill-switch: if PIA
+  # drops, qBittorrent loses connectivity — the home IP never joins the swarm.
+  # Reuses the same PIA OpenVPN creds (WCM → .env.local) as pia-exit. Separate
+  # gluetun instance so torrent traffic never mixes with the exit-node path.
+  #
+  # PROFILE: torrent (NOT media) — gluetun's NET_ADMIN + iptables rules in
+  # WSL2 mirrored-networking mode crash the vpnkit-bridge socket. Isolating
+  # under its own profile means `--profile media` (smdl + media-ai) starts
+  # cleanly without gluetun. Start explicitly when torrenting is needed:
+  #   docker compose --env-file .env.local --profile torrent up -d
+  torrent-vpn:
+    profiles: [torrent]
+    image: qmcgaw/gluetun:v3
+    container_name: torrent-vpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      VPN_SERVICE_PROVIDER: private internet access
+      VPN_TYPE: openvpn
+      OPENVPN_USER:     ${PIA_USER:?PIA_USER must be set in .env.local}
+      OPENVPN_PASSWORD: ${PIA_PASSWORD:?PIA_PASSWORD must be set in .env.local}
+      SERVER_REGIONS:   ${PIA_REGION:-Singapore}
+      TZ: "Asia/Singapore"
+      # Healthcheck pings 1.1.1.1 through the tunnel; if PIA drops it fails fast.
+      HEALTH_TARGET_ADDRESS: 1.1.1.1:443
+      # Allow SMDL (on metamcp-network) + the loopback publish to reach the
+      # qBittorrent WebUI without the kill-switch firewall blocking inbound.
+      FIREWALL_INPUT_PORTS: "8080"
+    volumes:
+      - torrent_vpn_data:/gluetun
+    ports:
+      # qBittorrent WebUI on loopback for owner debugging. qb shares this
+      # namespace, so gluetun owns the port.
+      - "127.0.0.1:8189:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--tries=1", "--timeout=5", "https://am.i.mullvad.net/json"]
+      interval: 60s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - metamcp-network
+
+  qbittorrent:
+    profiles: [torrent]
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    # Share torrent-vpn's namespace → every byte exits via PIA, kill-switched.
+    network_mode: "service:torrent-vpn"
+    depends_on:
+      torrent-vpn:
+        condition: service_healthy
+    environment:
+      PUID: "0"
+      PGID: "0"
+      TZ: "Asia/Singapore"
+      WEBUI_PORT: "8080"
+    volumes:
+      # qBittorrent.conf lives here. SMDL drives the WebUI API without a
+      # password via a subnet whitelist set in that conf:
+      #   WebUI\AuthSubnetWhitelistEnabled=true
+      #   WebUI\AuthSubnetWhitelist=172.19.0.0/16   (the metamcp-network subnet)
+      #   WebUI\HostHeaderValidation=false
+      # The named volume persists this across restarts/rebuilds. If the volume
+      # is ever recreated, re-apply those keys (LSIO regenerates a default conf
+      # with auth ON and a random per-session password otherwise).
+      - qbittorrent_config:/config
+      # Same media disk SMDL mounts, so it can read finished files directly.
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}:/downloads"
+
+  # ── Optional: media downloader (profile: media) ─────────────────────────────
+
+  smdl:
+    profiles: [media]
+    build:
+      context: ../sentinel-smdl
+      dockerfile: Dockerfile
+    container_name: smdl
+    restart: unless-stopped
+    user: "0:0"
+    # Hot-reload (owner box only): app/ is bind-mounted below + uvicorn --reload,
+    # so editing app code on the host reloads IN-PLACE — no container recreate,
+    # so no :8096 tailscale-serve re-bind dance per code deploy. Mirrors the image
+    # CMD + the reload flags. (smdl-tv stays baked/immutable for the public build.)
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8096",
+              "--no-access-log", "--proxy-headers", "--forwarded-allow-ips=*",
+              "--reload", "--reload-dir", "/app/app"]
+    # Secrets lock-down (ADR INF-009): scoped to its own keys; no .env.local slurp.
+    # (.env.local is still bind-mounted read-only for in-container hot-reload.)
+    ports:
+      - "127.0.0.1:8096:8096"
+      # Loopback-only. See vaultwarden note: if tailscale serve already
+      # holds this port, Docker's bind silently fails — clear the serve
+      # first, then recreate, then re-enable.
+    environment:
+      OWNER_AUTH_TOKEN: ${OWNER_AUTH_TOKEN:-}
+      SMDL_BOT_TOKEN: ${SMDL_BOT_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      RD_API_TOKEN: ${RD_API_TOKEN:-}
+      # Sticker Maker GIF sources (Giphy/Tenor). Both optional: Giphy falls
+      # back to its public beta key if unset; Tenor stays dark until a key is
+      # set. WCM-sourced via .env.local.
+      GIPHY_API_KEY: ${GIPHY_API_KEY:-}
+      TENOR_API_KEY: ${TENOR_API_KEY:-}
+      # TMDB v4 read token — Theater "Where to watch" (legal streaming
+      # availability / JustWatch deep-link, ADR MED-002). Optional: unset ⇒
+      # the panel stays hidden. WCM-sourced via .env.local.
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      # Sticker Studio "✨ Generate" — text→image via the host's ComfyUI FLUX
+      # (Q8 GGUF + Turbo LoRA, ~50s/img). OWNER box only; degrade-dark when
+      # unset (OSS image has no GPU). Pinned to the Docker Desktop host IPv4 (not
+      # host.docker.internal) on purpose: name resolution flaked under rapid
+      # executor-thread calls right after startup → a finished render failed on a
+      # DNS hiccup. The literal IP removes that dependency (same fix + IP Coinbox
+      # uses for ComfyUI). Override SMDL_COMFY_URL in .env.local if the IP moves.
+      SMDL_COMFY_URL: ${SMDL_COMFY_URL:-http://192.168.65.254:8821}
+      # GPU broker lease — don't fight Qwen / a game for the 24 GB card. Reuses
+      # the shared 'gpu-broker-client' token (mirrored as COINBOX_GPU_BROKER_TOKEN
+      # in .env.local). Fails OPEN if the broker is down. SMDL is just another
+      # flux consumer on the same broker (ADR AI-005 / gpu-broker ADR). Same IPv4
+      # pin as above (avoids the DNS-flake release-noise).
+      SMDL_GPU_BROKER_URL: ${SMDL_GPU_BROKER_URL:-http://192.168.65.254:8200}
+      SMDL_GPU_BROKER_TOKEN: ${COINBOX_GPU_BROKER_TOKEN:-}
+      # media-ai sidecar (transcription/summary/search). Owner-only API
+      # (app/media_ai_routes.py), degrade-dark: unset ⇒ feature hidden. Reached
+      # over the compose network. Activates on the next `up -d smdl`.
+      SMDL_MEDIA_AI_URL: ${SMDL_MEDIA_AI_URL:-http://media-ai:8097}
+      # Trakt.tv device-code OAuth (Continue Watching cross-device + scrobble).
+      # Owner box only; community/play builds don't get it.
+      TRAKT_CLIENT_ID: ${TRAKT_CLIENT_ID:-}
+      TRAKT_CLIENT_SECRET: ${TRAKT_CLIENT_SECRET:-}
+      TELETHON_API_ID: ${TELETHON_API_ID:-}
+      TELETHON_API_HASH: ${TELETHON_API_HASH:-}
+      TELETHON_SESSION: ${TELETHON_SESSION:-}
+      DOWNLOADS_DIR: /downloads
+      COOKIES_DIR: /cookies
+      DB_PATH: /data/jobs.db
+      CONFIG_FILE: /config/smdl.json
+      # ADR MED-012 — route Instagram through the Camoufox stealth browser to
+      # stop the bot/automation flagging (fingerprint, not cookies, is the flag).
+      # Default OFF: until the burner IG is logged into camofox via noVNC (step
+      # C) and this flips to 1, IG stays on the existing yt-dlp+cookies path.
+      SMDL_IG_CAMOUFOX: ${SMDL_IG_CAMOUFOX:-0}
+      CAMOFOX_URL: ${CAMOFOX_URL:-http://camofox:9377}
+      CAMOFOX_ACCESS_KEY: ${CAMOFOX_ACCESS_KEY:-}
+      CAMOFOX_IG_SESSION: ${CAMOFOX_IG_SESSION:-ig-owner}
+      # File delivery (Path 1 + 2 in scope doc)
+      SMDL_PUBLIC_BASE_URL: "https://media.your-domain.example.com"
+      SMDL_TAILNET_HOST: "sentinel-host.tail00dd59.ts.net"
+      SMDL_SHARE_SECRET: ${SMDL_SHARE_SECRET:?SMDL_SHARE_SECRET must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      # License-authority HMAC key (app/licensing.py). Signs every issued
+      # license key's bearer secret; only the HMAC is persisted. Already
+      # injected via env_file below — declared here for visibility. Soft form
+      # (:-): absence degrades to LicensingNotConfigured, it does NOT block the
+      # core SMDL service. MUST stay stable forever — rotation breaks all keys.
+      LICENSE_SIGNING_SECRET: ${LICENSE_SIGNING_SECRET:-}
+      # License Registry mirror (best-effort, Phase 2). SMDL pushes issued/
+      # revoked key metadata (never secrets) to watchdog v2 on the host. All
+      # three are optional — if URL/TOKEN are unset the mirror is a no-op and
+      # keys stay local-only. host.docker.internal reaches the host's :8200.
+      LICENSE_REGISTRY_URL: ${LICENSE_REGISTRY_URL:-http://host.docker.internal:8200}
+      LICENSE_REGISTRY_TOKEN: ${LICENSE_REGISTRY_TOKEN:-}
+      LICENSE_INSTANCE: ${LICENSE_INSTANCE:-smdl-operator}
+      # Telegram Mini App URL — /dashboard and /app commands open this in the WebView.
+      WEBAPP_URL: "https://media.your-domain.example.com/app"
+      # Bot token for Mini App initData validation (PR #1, app/miniapp.py).
+      # Inherited from .env.local — TELEGRAM_BOT_TOKEN is already set there.
+      BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # #42 — reload-env fanout from sentinel-watchdog. The mounted
+      # .env.local (below) is the file SMDL re-parses; the token gates the
+      # endpoint at /internal/reload-env.
+      INTERNAL_RELOAD_TOKEN: ${INTERNAL_RELOAD_TOKEN:?INTERNAL_RELOAD_TOKEN must be set in .env.local (sourced from WCM by sync_env_from_wcm.ps1)}
+      ENV_LOCAL_PATH: /secrets/.env.local
+      # Sentinel Media edition. Code defaults to "community" (the safe,
+      # shippable platform shell). This is the operator's own instance, so
+      # opt into the full-featured build: bundled restream catalogues,
+      # torrent / Real-Debrid pipeline, and the same-origin HLS relay that
+      # powers the Family TV YouTube playback. See app/edition.py.
+      SENTINEL_MEDIA_EDITION: "private"
+      # uvicorn --reload uses watchfiles, which relies on inotify — and inotify
+      # events do NOT cross Docker Desktop's Windows bind mounts, so file polling
+      # is required or --reload would silently never fire on a host edit.
+      WATCHFILES_FORCE_POLLING: "true"
+      # Don't write .pyc into the bind-mounted app/ (keeps the repo clean; avoids
+      # any pyc-write churn under the reload watcher).
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}:/downloads"
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}/cookies:/cookies"
+      - "./smdl/config:/config"
+      - smdl_data:/data
+      # data/ bind-mount so the in-app "★ Curate" button writes to the
+      # source repo's channel_aliases.yaml (and youtube_live.yaml) and
+      # they survive container rebuilds. Read-write because the curate
+      # endpoint mutates the file.
+      - "../sentinel-smdl/data:/app/data:rw"
+      # Static bundle (Svelte Theater build + any other assets) lives in the
+      # repo's static/ dir, written by `vite build`. Bind-mounted RO so a
+      # frontend rebuild on the host is served live without an image rebuild.
+      # Without this the container has no /app/static and the Theater route
+      # falls back to the "bundle isn't built yet" stub.
+      - "../sentinel-smdl/static:/app/static:ro"
+      # app/ bind-mount (owner box) so code edits on the host hot-reload via
+      # uvicorn --reload (see command: above) WITHOUT a container recreate — this
+      # is what removes the per-deploy :8096 serve-dance. rw so Python can write
+      # __pycache__ (avoids read-only .pyc noise). Overlays the baked image app/
+      # with the same repo source.
+      - "../sentinel-smdl/app:/app/app:rw"
+      # SECURITY (ADR INF-009 / least privilege): mount a SCOPED secrets file
+      # holding ONLY this container's keys, NOT the whole .env.local (68 keys =
+      # every stack secret). Regenerated from .env.local by
+      # sentinel_secrets.scoped_env on every projection/Set; in-container path
+      # stays /secrets/.env.local so /internal/reload-env is unchanged.
+      - "./.env.smdl:/secrets/.env.local:ro"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      # default — keeps every existing same-stack reachability unchanged.
+      # metamcp-network — lets SMDL resolve `torrent-vpn` by DNS so it can
+      # drive the qBittorrent WebUI (the direct-torrent RD-451 fallback).
+      - default
+      - metamcp-network
+
+  # ── Camoufox stealth browser (profile: media) — ADR MED-012 ─────────────────
+  #
+  # Anti-detection Firefox (C++-level fingerprint spoofing) wrapped in a REST API.
+  # Sentinel Media routes ONLY Instagram through it: yt-dlp's non-browser
+  # fingerprint is what flags the IG account, not the cookie. SMDL reaches it at
+  # http://camofox:9377 behind a bearer key; IG auth lives in the persistent
+  # profile volume (logged in once via noVNC — ADR MED-012 step C). yt-dlp still
+  # serves the other six platforms unchanged. Loopback-only; askjo telemetry off
+  # (V4 Mode A self-hosted). Build needs dist/ pre-staged (see camofox-browser
+  # Makefile `fetch`); image carries Camoufox 135.0.1-beta.24 + yt-dlp.
+  camofox:
+    profiles: [media]
+    build:
+      context: ../camofox-browser
+      dockerfile: Dockerfile
+      args:
+        ARCH: x86_64
+    container_name: camofox
+    restart: unless-stopped
+    environment:
+      CAMOFOX_PORT: "9377"
+      CAMOFOX_PROFILE_DIR: /profiles            # persisted IG session (storage state)
+      CAMOFOX_COOKIES_DIR: /cookies-camofox      # optional Netscape cookie-import seed
+      CAMOFOX_ACCESS_KEY: ${CAMOFOX_ACCESS_KEY:?CAMOFOX_ACCESS_KEY must be set in .env.local}
+      CAMOFOX_API_KEY: ${CAMOFOX_API_KEY:-}      # enables the cookie-import endpoint
+      CAMOFOX_ADMIN_KEY: ${CAMOFOX_ADMIN_KEY:-}  # guards POST /stop
+      CAMOFOX_CRASH_REPORT_ENABLED: "false"      # privacy: no telemetry phone-home
+      ENABLE_VNC: "1"                            # owner IG login surface (step C)
+      VNC_PASSWORD: ${CAMOFOX_VNC_PASSWORD:-}
+      NOVNC_PORT: "6080"
+      # websockify must bind the container's external iface (0.0.0.0) so Docker's
+      # 127.0.0.1:6080->6080 port-forward can reach it; the watcher otherwise binds
+      # the container's own loopback, which the forward can't hit. Host side stays
+      # loopback-only via the ports mapping.
+      VNC_BIND: "0.0.0.0"
+    ports:
+      - "127.0.0.1:9377:9377"                    # REST API (loopback only)
+      - "127.0.0.1:6080:6080"                    # noVNC (loopback; reach via tailnet/SSH)
+    volumes:
+      - camofox_profiles:/profiles
+      - camofox_cookies:/cookies-camofox
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9377/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+  # ── media-ai sidecar (profile: media) ───────────────────────────────────────
+  #
+  # Transcription / summary / search for Sentinel Media. SEPARATE image from
+  # `smdl` on purpose: the heavy ML stack (CTranslate2 / faster-whisper, PyAV)
+  # lives here, never in the SMDL web image, so the OSS/community SMDL build keeps
+  # its "no AI dependency" promise. SMDL reaches it at http://media-ai:8097 and
+  # degrades dark when SMDL_MEDIA_AI_URL is unset (Phase 4 wiring).
+  #
+  # CPU-only by default (faster-whisper int8 ran ~10x realtime on this host's CPU)
+  # so transcription never fights FLUX / Qwen / a game for the 24 GB card. The
+  # "GPU when the broker says free" path (whisper.cpp/hipBLAS, since CTranslate2
+  # has no ROCm) is a later phase and is broker-gated when it lands.
+  media-ai:
+    profiles: [media]
+    build:
+      context: ../sentinel-smdl/sidecar-ai
+      dockerfile: Dockerfile
+    container_name: media-ai
+    restart: unless-stopped
+    ports:
+      # Host 8111 (8097 is taken by claude-assistant-testbot; 8098/8099 are
+      # catalogue-reserved). Container port stays 8097 — SMDL reaches it over the
+      # compose network at media-ai:8097, so this publish is only for host debug.
+      - "127.0.0.1:8111:8097"   # loopback-only
+    environment:
+      MEDIA_AI_MODEL: ${MEDIA_AI_MODEL:-base}
+      MEDIA_AI_COMPUTE_TYPE: ${MEDIA_AI_COMPUTE_TYPE:-int8}
+      MEDIA_AI_CPU_THREADS: ${MEDIA_AI_CPU_THREADS:-0}
+      MEDIA_AI_MODELS_DIR: /models
+      MEDIA_AI_DOWNLOADS_DIR: /downloads
+      # GPU broker gate (Phase 2): media-ai is an LLM-class consumer — it does
+      # NOT lease (only FLUX leases). Before loading Qwen it reads the broker
+      # status and DEFERS when FLUX/gaming holds the card. Reuses the shared
+      # gpu-broker-client token. Same IPv4 pin as SMDL (avoids DNS flake).
+      MEDIA_AI_GPU_BROKER_ENABLED: ${MEDIA_AI_GPU_BROKER_ENABLED:-true}
+      MEDIA_AI_GPU_BROKER_URL: ${MEDIA_AI_GPU_BROKER_URL:-http://192.168.65.254:8200}
+      MEDIA_AI_GPU_BROKER_TOKEN: ${COINBOX_GPU_BROKER_TOKEN:-}
+      # Qwen summary (Phase 2) via llama-swap :1234 (on-demand 27B, TTL evict).
+      # Unset ⇒ summary stays dark. IPv4 pin like the broker/ComfyUI URLs.
+      MEDIA_AI_QWEN_URL: ${MEDIA_AI_QWEN_URL:-http://192.168.65.254:1234}
+      MEDIA_AI_QWEN_MODEL: ${MEDIA_AI_QWEN_MODEL:-qwen/qwen3.6-27b}
+      # VRAM-headroom preflight: the broker is blind to GPU users that don't
+      # lease (a resident ComfyUI/FLUX model), so media-ai also checks ComfyUI's
+      # /system_stats for real free VRAM and defers when the 27B won't fit. Same
+      # ComfyUI IPv4 pin as SMDL_COMFY_URL. Unset ⇒ check skipped.
+      MEDIA_AI_GPU_STATS_URL: ${MEDIA_AI_GPU_STATS_URL:-http://192.168.65.254:8821}
+      MEDIA_AI_MIN_VRAM_GB: ${MEDIA_AI_MIN_VRAM_GB:-17}
+      # Translate non-English transcripts to English (in-stack libretranslate, has
+      # en/zh/ru loaded) so foreign content is searchable by an English query.
+      # Reached over the compose network; degrade-dark + fail-soft.
+      MEDIA_AI_TRANSLATE_URL: ${MEDIA_AI_TRANSLATE_URL:-http://libretranslate:5000}
+      # Auto-index sweep: index new long-form video/audio in the background so the
+      # library stays searchable without manual tapping. Scoped to long-form dirs
+      # + min size (skips short reels); bounded; CPU-only.
+      MEDIA_AI_AUTOINDEX: ${MEDIA_AI_AUTOINDEX:-true}
+      MEDIA_AI_AUTOINDEX_DIRS: ${MEDIA_AI_AUTOINDEX_DIRS:-youtube,Stremio,iptv,live}
+    volumes:
+      # Same media root SMDL mounts, READ-ONLY — this service only reads bytes to
+      # transcribe; it never writes into the library.
+      - "${SENTINEL_MEDIA_ROOT:-G:/YT-DLP}:/downloads:ro"
+      - media_ai_models:/models
+      - media_ai_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8097/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    networks:
+      - default
+      - metamcp-network
+
+  # ── PUBLIC community TV build (profile: tv) ─────────────────────────────────
+  #
+  # Isolated sibling of `smdl`. This is the build that goes on the Google Play
+  # Store as "Sentinel Media" (TV vertical). Reuses the same image but runs with
+  # EDITION=community + PROFILE=play + SURFACE=tv so it is the safe, shippable
+  # shell: no bundled restream catalogues, no torrent/Real-Debrid/relay, no
+  # private sources or license-key redemption — Play Billing only. Content is the
+  # baked-in data/youtube_live.yaml (all public YouTube @handles).
+  #
+  # CRITICAL — isolation: this service deliberately does NOT inherit the owner's
+  # env_file (.env.local) and mounts NONE of the owner's data (no G:/YT-DLP
+  # downloads, no ./smdl/config, no ../sentinel-smdl/data, no .env.local). Its
+  # entire environment comes from smdl-tv.env (gitignored, fresh secrets). The
+  # only shared on-disk asset is the public static/ bundle, mounted read-only.
+  smdl-tv:
+    profiles: [tv]
+    build:
+      context: ../sentinel-smdl
+      dockerfile: Dockerfile
+    image: metamcp-local-smdl:latest
+    container_name: smdl-tv
+    restart: unless-stopped
+    user: "0:0"
+    env_file:
+      - smdl-tv.env
+    ports:
+      # Loopback-only for now. Public exposure (tv.sentinelsuite.xyz) is a
+      # separate, gated step — add the CF tunnel public hostname by hand.
+      - "127.0.0.1:8077:8096"
+    volumes:
+      # Own DB volume (jobs.db, snapshots). Empty downloads volume so the
+      # /downloads path exists without touching the owner's media disk.
+      - smdl_tv_data:/data
+      - smdl_tv_downloads:/downloads
+      # Public frontend bundle only. Read-only. No private data here.
+      - "../sentinel-smdl/static:/app/static:ro"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+    networks:
+      - default
+
+  # ── Optional: Firefly III financial tracking (profile: finance) ─────────────
+
+  # Note: defaults below match the original docker-compose.firefly.yml so the
+  # existing firefly_db volume keeps working unchanged. To rotate, set
+  # FIREFLY_DB_PASSWORD + FIREFLY_APP_KEY in .env.local AND drop+recreate the
+  # firefly_db volume (data loss — back up your Firefly export first).
+  firefly:
+    profiles: [finance]
+    image: fireflyiii/core:latest
+    container_name: firefly
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - firefly_upload:/var/www/html/storage/upload
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "false"
+      APP_KEY: ${FIREFLY_APP_KEY:-base64:8JchMGtul6+LRLR3+sL63lUC0jgAGsEvXh7vBFZ782Y=}
+      DB_CONNECTION: pgsql
+      DB_HOST: firefly-db
+      DB_PORT: 5432
+      DB_DATABASE: firefly
+      DB_USERNAME: ${FIREFLY_DB_USER:-firefly}
+      DB_PASSWORD: ${FIREFLY_DB_PASSWORD:-firefly_pass}
+      TRUSTED_PROXIES: "**"
+      APP_URL: "https://firefly.your-domain.example.com"
+      DEFAULT_LANGUAGE: "en_US"
+      DEFAULT_LOCALE: "equal"
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      MAIL_MAILER: "null"
+      SEND_REGISTRATION_MAIL: "false"
+      SEND_ERROR_MESSAGE: "false"
+      SITE_OWNER: ${FIREFLY_OWNER_EMAIL:-your@email.com}
+    depends_on:
+      firefly-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    networks:
+      - firefly-net
+
+  firefly-db:
+    profiles: [finance]
+    image: postgres:16-alpine
+    container_name: firefly-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: firefly
+      POSTGRES_USER: ${FIREFLY_DB_USER:-firefly}
+      POSTGRES_PASSWORD: ${FIREFLY_DB_PASSWORD:-firefly_pass}
+    volumes:
+      - firefly_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FIREFLY_DB_USER:-firefly} -d firefly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - firefly-net
+
+  firefly-importer:
+    profiles: [finance]
+    image: fireflyiii/data-importer:latest
+    container_name: firefly-importer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8181:8080"
+    environment:
+      # FIREFLY_III_URL: how the importer container talks to Firefly
+      #   server-to-server (Docker network DNS).
+      # VANITY_URL: how the USER's browser sees Firefly — used to
+      #   build OAuth redirect URLs. Must match the URL you actually
+      #   access Firefly at (host-mapped port 8180), NOT the importer's
+      #   own URL.
+      FIREFLY_III_URL:        "http://firefly:8080"
+      VANITY_URL:             "https://firefly.your-domain.example.com"
+      FIREFLY_III_ACCESS_TOKEN: ${FIREFLY_API_TOKEN:-}
+      TRUSTED_PROXIES:        "**"
+      APP_ENV:                "local"
+      # Upload limit boost — yearly CSVs can exceed default 2 MB
+      PHP_UPLOAD_MAX_FILESIZE: "16M"
+      PHP_POST_MAX_SIZE:       "16M"
+    depends_on:
+      firefly:
+        condition: service_healthy
+    networks:
+      - firefly-net
+
+  # ── Self-hosted Git (profile: journal) ──────────────────────────────────────
+  # Forgejo — locally-hosted GitHub-equivalent for private repos that should
+  # never go online. The "secret journal" tier of our git workflow:
+  #
+  #   forgejo (here, loopback)  → unsanitized full-fidelity history
+  #   github.com/YOUR_GITHUB_USERNAME/*     → sanitized public mirrors (post-carve-out)
+  #
+  # Default-deny: bound to 127.0.0.1 only. No public exposure unless we
+  # later add a Cloudflare Tunnel / Tailscale serve in front of it.
+  forgejo:
+    profiles: [journal]
+    image: codeberg.org/forgejo/forgejo:9
+    container_name: forgejo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"   # web UI
+      - "127.0.0.1:2222:22"     # git over SSH (host port 2222 → container 22)
+    volumes:
+      - forgejo_data:/var/lib/gitea
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      TZ: "${SENTINEL_TIMEZONE:-Asia/Kuala_Lumpur}"
+      # Server identity — keep it generic so we can later put a Cloudflare
+      # Tunnel hostname in front without rebuilding.
+      FORGEJO__server__DOMAIN: localhost
+      FORGEJO__server__SSH_DOMAIN: localhost
+      FORGEJO__server__SSH_PORT: 2222
+      FORGEJO__server__ROOT_URL: "http://localhost:3000/"
+      FORGEJO__database__DB_TYPE: sqlite3
+      # Single-user privacy posture — no public sign-ups, every page requires
+      # login. Matches the "secret journal" framing.
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "true"
+      FORGEJO__service__SHOW_REGISTRATION_BUTTON: "false"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  # ── Coinbox arcade: Credits/economy backend (profile: coinbox) ──────────────
+  # Public-players token economy for the Coinbox arcade (../retro-arcade).
+  # Standalone FastAPI + its OWN dedicated Postgres (isolation — a public-facing
+  # service never shares an instance with owner-only suite data). Design:
+  # retro-arcade/docs/token-system-design.md (D-018). P1 = the guest loop
+  # (device identity, Credits ledger, capped earns, cosmetic unlocks).
+  coinbox-credits:
+    profiles: [coinbox]
+    build:
+      context: ../coinbox-credits
+      dockerfile: Dockerfile
+    container_name: coinbox-credits
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8110:8110"
+    environment:
+      COINBOX_ENV: ${COINBOX_ENV:-dev}
+      COINBOX_DATABASE_URL: postgresql+psycopg://coinbox:${COINBOX_DB_PASSWORD:-coinbox_dev_pass}@coinbox-postgres:5432/coinbox
+      # Secrets declared in sentinel-watchdog manifest (coinbox-session-secret,
+      # coinbox-db-password, coinbox-bot-token). Set real values in WCM + sync to
+      # .env.local before public exposure; dev defaults below.
+      COINBOX_SESSION_SECRET: ${COINBOX_SESSION_SECRET:-dev-insecure-change-me}
+      COINBOX_COOKIE_SECURE: ${COINBOX_COOKIE_SECURE:-false}   # flip true behind CF https
+      COINBOX_ALLOWED_ORIGINS: ${COINBOX_ALLOWED_ORIGINS:-http://localhost:8350,http://127.0.0.1:8350,https://arcade.sentinelsuite.xyz}
+      COINBOX_BETA_WELCOME_CREDITS: "150"
+      COINBOX_GPU_DAILY_BUDGET: "200"
+      # Prompt Studio (GPU sink) → the host's ComfyUI (FLUX Q8+Turbo). Login-gated.
+      COINBOX_COMFY_URL: ${COINBOX_COMFY_URL:-http://host.docker.internal:8821}
+      COINBOX_FORGE_GEN_COST: "40"
+      # Telegram Login (Tier-1) — dedicated arcade bot @coinbox_sentinel_bot.
+      COINBOX_BOT_TOKEN: ${COINBOX_BOT_TOKEN:-}
+      COINBOX_BOT_USERNAME: ${COINBOX_BOT_USERNAME:-coinbox_sentinel_bot}
+      # GPU broker (watchdog v2) — the forge acquires a lease before a render so it
+      # doesn't fight Qwen/gaming for the 24 GB card. Fail-open if unreachable.
+      COINBOX_GPU_BROKER_URL: ${COINBOX_GPU_BROKER_URL:-http://host.docker.internal:8200}
+      COINBOX_GPU_BROKER_TOKEN: ${COINBOX_GPU_BROKER_TOKEN:-}
+    # Pin host.docker.internal to the Docker Desktop host IPv4 in /etc/hosts so the
+    # long-lived app resolves it LOCALLY (no embedded-DNS round-trip → no flaky
+    # EAI_AGAIN, no IPv6 "network unreachable"). Use the explicit IP, NOT
+    # `host-gateway` (which resolves to an unroutable IPv6 ULA on Docker Desktop).
+    # Override COINBOX_HOST_IP if Docker Desktop ever changes the 192.168.65.254 gw.
+    extra_hosts:
+      - "host.docker.internal:${COINBOX_HOST_IP:-192.168.65.254}"
+    volumes:
+      - coinbox_data:/data                     # generated images persist here
+    depends_on:
+      coinbox-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8110/health').read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - coinbox-net
+
+  coinbox-postgres:
+    profiles: [coinbox]
+    image: postgres:16-alpine
+    container_name: coinbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: coinbox
+      POSTGRES_USER: coinbox
+      POSTGRES_PASSWORD: ${COINBOX_DB_PASSWORD:-coinbox_dev_pass}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - coinbox_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coinbox -d coinbox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - coinbox-net
+
+# ── Volumes (names preserved for data continuity) ────────────────────────────
+
+volumes:
+  metamcp_local_postgres_data:
+    driver: local
+  ytdlp_mcp_data:
+    driver: local
+  reminders_mcp_data:
+    driver: local
+  shopping_mcp_data:
+    driver: local
+  portfolio_mcp_data:
+    driver: local
+  portfolio_mcp_test_data:
+    driver: local
+  memory_mcp_data:
+    driver: local
+  onedrive_mcp_data:
+    driver: local
+  libretranslate_models:
+    driver: local
+  forgejo_data:
+  pia_exit_data:
+  torrent_vpn_data:
+  qbittorrent_config:
+  smdl_data:
+  smdl_tv_data:
+  smdl_tv_downloads:
+  # Camoufox (ADR MED-012): persisted IG browser profile + cookie-import seed dir.
+  camofox_profiles:
+  camofox_cookies:
+  # media-ai sidecar: whisper model weights (downloaded on first use) + its own
+  # data dir (Phase 2/3 transcript + search DB). Survive image rebuilds.
+  media_ai_models:
+    driver: local
+  media_ai_data:
+    driver: local
+  coinbox_db:
+    driver: local
+  coinbox_data:
+    driver: local
+  tailscale_pia_state:
+    driver: local
+  firefly_upload:
+    driver: local
+  firefly_db:
+    driver: local
+
+# ── Networks ─────────────────────────────────────────────────────────────────
+
+networks:
+  metamcp-network:
+    driver: bridge
+  firefly-net:
+    driver: bridge
+  coinbox-net:
+    driver: bridge

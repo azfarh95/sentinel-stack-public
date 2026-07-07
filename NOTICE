@@ -1,0 +1,12 @@
+Sentinel AI Stack
+Copyright 2026 Azfar Hakim
+
+This product includes software developed by Azfar Hakim
+(https://github.com/azfarh95/sentinel-stack-public).
+
+This software is built on top of:
+- MetaMCP (Apache 2.0) — https://github.com/metatool-ai/metamcp
+- OpenClaw (proprietary) — https://www.npmjs.com/package/openclaw
+- Playwright (Apache 2.0) — https://github.com/microsoft/playwright
+- LM Studio (proprietary, free for personal use) — https://lmstudio.ai/
+- Various open-source MCP servers — see individual mcp/* directories

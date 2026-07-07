@@ -1,0 +1,18 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.0
+python-telegram-bot==21.11.1
+yt-dlp
+gallery-dl
+aiosqlite
+telethon==1.40.0
+# curl_cffi enables yt-dlp's --impersonate flag (Chrome TLS fingerprint).
+# Required for Cloudflare-protected sites (Stripchat, Chaturbate, etc.) that
+# return HTTP 406 on default Python/urllib TLS handshake.
+# Pinned to <0.15 because yt-dlp 2026.03.17 only supports 0.10.x–0.14.x;
+# 0.15+ raises ImportError at module load.
+curl_cffi>=0.10,<0.15
+# OneDrive integration: MSAL handles OAuth (device-code flow + token refresh).
+# httpx is used to talk to Microsoft Graph for uploads — kept separate from
+# python-telegram-bot's own httpx to avoid version pinning fights.
+msal>=1.30
+httpx>=0.27

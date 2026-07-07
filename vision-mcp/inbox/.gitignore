@@ -1,0 +1,4 @@
+# Runtime drop folder (mounted read-only at /data). Keep the folder, ignore drops.
+*
+!.gitkeep
+!.gitignore
